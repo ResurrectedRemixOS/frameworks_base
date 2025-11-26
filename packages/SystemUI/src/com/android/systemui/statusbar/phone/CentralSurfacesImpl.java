@@ -123,6 +123,7 @@ import com.android.systemui.demomode.DemoMode;
 import com.android.systemui.demomode.DemoModeController;
 import com.android.systemui.dt2s.DoubleTapToSleepController;
 import com.android.systemui.edgelight.EdgeLightViewController;
+import com.android.systemui.charging.ChargingAnimationViewController;
 import com.android.systemui.emergency.EmergencyGesture;
 import com.android.systemui.emergency.EmergencyGestureModule.EmergencyGestureIntentFactory;
 import com.android.systemui.fragments.ExtensionFragmentListener;
@@ -409,6 +410,7 @@ public class CentralSurfacesImpl implements CoreStartable, CentralSurfaces {
     private final UserTracker mUserTracker;
     private final ActivityStarter mActivityStarter;
     private final EdgeLightViewController mEdgeLightViewController;
+    private final ChargingAnimationViewController mChargingAnimationViewController;
 
     private final DisplayMetrics mDisplayMetrics;
 
@@ -621,7 +623,8 @@ public class CentralSurfacesImpl implements CoreStartable, CentralSurfaces {
             WindowManager windowManager,
             WindowManagerProvider windowManagerProvider,
             SessionTracker sessionTracker,
-            EdgeLightViewController edgeLightViewController
+            EdgeLightViewController edgeLightViewController,
+            ChargingAnimationViewController chargingAnimationViewController
     ) {
         mContext = context;
         mNotificationsController = notificationsController;
@@ -706,6 +709,7 @@ public class CentralSurfacesImpl implements CoreStartable, CentralSurfaces {
         mUserTracker = userTracker;
         mActivityStarter = activityStarter;
         mEdgeLightViewController = edgeLightViewController;
+        mChargingAnimationViewController = chargingAnimationViewController;
         mBrightnessMirrorShowingRepository = brightnessMirrorShowingRepository;
         if (!SceneContainerFlag.isEnabled()) {
             mGlanceableHubContainerController = glanceableHubContainerController;
@@ -887,6 +891,18 @@ public class CentralSurfacesImpl implements CoreStartable, CentralSurfaces {
                         () -> mTopUiController.setRequestTopUi(requestTopUi, componentTag)
                 )));
         attachEdgeLight();
+        attachChargingAnimation();
+    }
+
+    private void attachChargingAnimation() {
+        View chargingView = mChargingAnimationViewController.getChargingView();
+        if (chargingView.getParent() instanceof ViewGroup) {
+            ((ViewGroup) chargingView.getParent()).removeView(chargingView);
+        }
+        ViewGroup root = getNotificationShadeWindowView();
+        int edge = root.indexOfChild(mEdgeLightViewController.getEdgeLightView());
+        root.addView(chargingView, Math.max(edge, 0) + 1, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
     /** Puts the edge light under the lock screen views, where Evolution X keeps it. */
