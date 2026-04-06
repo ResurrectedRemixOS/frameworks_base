@@ -151,6 +151,10 @@ constructor(
 
     @VisibleForTesting
     var rippleView: RippleView = RippleView(context, attrs = null).also { it.setupShader() }
+    @VisibleForTesting
+    var axRippleView: AXRippleView = AXRippleView(context, attrs = null)
+    @VisibleForTesting
+    var axChargingCircleView: AXChargingCircleView = AXChargingCircleView(context, attrs = null)
 
     init {
         pluggedIn = batteryController.isPluggedIn
@@ -235,9 +239,67 @@ constructor(
             handshakePending = true
             handshakeAttempts = 0
             pollHandshakeAndStart()
+        } else if (context.resources.getBoolean(R.bool.config_useCustomChargingAnim)) {
+            startCustomRipple()
         } else {
             startAospRipple()
         }
+    }
+
+    private fun startCustomRipple() {
+        val mode = context.resources.getInteger(R.integer.config_chargingAnimMode)
+        if (mode == CHARGING_ANIM_MODE_CIRCLE) {
+            startCircleAnimation()
+        } else {
+            startRippleAnimation()
+        }
+    }
+
+    private fun startRippleAnimation() {
+        if (axRippleView.rippleInProgress() || axRippleView.parent != null) {
+            // Skip if ripple is still playing, or not playing but already added the parent
+            // (which might happen just before the animation starts or right after
+            // the animation ends.)
+            return
+        }
+        axRippleView.preloadRes()
+        windowLayoutParams.packageName = context.opPackageName
+        axRippleView.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewDetachedFromWindow(view: View) {}
+
+            override fun onViewAttachedToWindow(view: View) {
+                axRippleView.startRipple(Runnable {
+                    windowManager.removeView(axRippleView)
+                })
+                axRippleView.removeOnAttachStateChangeListener(this)
+            }
+        })
+        windowManager.addView(axRippleView, windowLayoutParams)
+        uiEventLogger.log(WiredChargingRippleEvent.CHARGING_RIPPLE_PLAYED)
+    }
+
+    private fun startCircleAnimation() {
+        if (axChargingCircleView.animationInProgress() || axChargingCircleView.parent != null) {
+            // Skip if animation is still playing, or not playing but already added the parent
+            // (which might happen just before the animation starts or right after
+            // the animation ends.)
+            return
+        }
+        axChargingCircleView.setBatteryLevel(batteryLevel)
+        axChargingCircleView.preloadRes()
+        windowLayoutParams.packageName = context.opPackageName
+        axChargingCircleView.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewDetachedFromWindow(view: View) {}
+
+            override fun onViewAttachedToWindow(view: View) {
+                axChargingCircleView.startAnimation(Runnable {
+                    windowManager.removeView(axChargingCircleView)
+                })
+                axChargingCircleView.removeOnAttachStateChangeListener(this)
+            }
+        })
+        windowManager.addView(axChargingCircleView, windowLayoutParams)
+        uiEventLogger.log(WiredChargingRippleEvent.CHARGING_RIPPLE_PLAYED)
     }
 
     private fun startAospRipple() {
@@ -824,6 +886,7 @@ constructor(
 
     companion object {
         private const val TAG = "WiredChargingRipple"
+        private const val CHARGING_ANIM_MODE_CIRCLE = 1
         private const val HANDSHAKE_POLL_MS = 150L
         // 2.2 s, as on Alpha.
         private const val HANDSHAKE_ATTEMPTS = 15
