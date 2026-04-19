@@ -246,6 +246,21 @@ constructor(
         }
     }
 
+    /**
+     * Removes a window overlay only if it is still attached. The ripple animation end callback
+     * can run after the view was already removed (rapid plug cycles, display changes, etc.).
+     */
+    private fun safeRemoveWindowOverlay(root: View) {
+        if (!root.isAttachedToWindow) {
+            return
+        }
+        try {
+            windowManager.removeView(root)
+        } catch (_: IllegalArgumentException) {
+            // WindowManagerGlobal: "not attached to window manager"
+        }
+    }
+
     private fun startCustomRipple() {
         val mode = context.resources.getInteger(R.integer.config_chargingAnimMode)
         if (mode == CHARGING_ANIM_MODE_CIRCLE) {
@@ -269,7 +284,7 @@ constructor(
 
             override fun onViewAttachedToWindow(view: View) {
                 axRippleView.startRipple(Runnable {
-                    windowManager.removeView(axRippleView)
+                    safeRemoveWindowOverlay(axRippleView)
                 })
                 axRippleView.removeOnAttachStateChangeListener(this)
             }
@@ -293,7 +308,7 @@ constructor(
 
             override fun onViewAttachedToWindow(view: View) {
                 axChargingCircleView.startAnimation(Runnable {
-                    windowManager.removeView(axChargingCircleView)
+                    safeRemoveWindowOverlay(axChargingCircleView)
                 })
                 axChargingCircleView.removeOnAttachStateChangeListener(this)
             }
