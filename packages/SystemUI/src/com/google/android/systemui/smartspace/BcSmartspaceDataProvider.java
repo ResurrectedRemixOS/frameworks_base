@@ -67,12 +67,8 @@ public final class BcSmartspaceDataProvider implements BcSmartspaceDataPlugin {
 
     @Override
     public BcSmartspaceDataPlugin.SmartspaceView getView(Context context) {
-        int layoutId =
-                mConfigProvider.isViewPager2Enabled()
-                        ? R.layout.smartspace_enhanced2
-                        : R.layout.smartspace_enhanced;
-
-        View view = LayoutInflater.from(context).inflate(layoutId, null, false);
+        View view =
+                LayoutInflater.from(context).inflate(R.layout.smartspace_enhanced2, null, false);
         view.addOnAttachStateChangeListener(mStateChangeListener);
         return (BcSmartspaceDataPlugin.SmartspaceView) view;
     }
