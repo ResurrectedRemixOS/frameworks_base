@@ -546,8 +546,6 @@ public abstract class SystemUIModule {
                         handler,
                         applicationScope,
                         bgDispatcher);
-        controller.alarmImage =
-                context.getResources().getDrawable(R.drawable.ic_access_alarms_big, null);
         return controller;
     }
     @Provides
