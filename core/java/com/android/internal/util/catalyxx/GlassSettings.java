@@ -350,6 +350,9 @@ public final class GlassSettings {
     /** SystemUI menus and dialogs, such as the Internet, Bluetooth and volume panel sheets. */
     public static final String PLACE_DIALOGS = "rr_glass_menus";
 
+    /** Launcher3's folders, while one is open. */
+    public static final String PLACE_FOLDERS = "rr_glass_folders";
+
     /**
      * 1 (the default) grows panels out of what opened them and shrinks them back into it, where
      * that panel's own switch is on too: the volume panel out of the volume keys
@@ -441,7 +444,7 @@ public final class GlassSettings {
     /** Every place key. */
     public static final String[] PLACES = {
         PLACE_SHADE, PLACE_NOTIFICATIONS, PLACE_LOCKSCREEN, PLACE_VOLUME, PLACE_POWER_MENU,
-        PLACE_DIALOGS,
+        PLACE_DIALOGS, PLACE_FOLDERS,
     };
 
     /** Every glass key but the Glass clock's ({@link #CLOCK_KEYS}), for watching them at once. */
@@ -452,8 +455,9 @@ public final class GlassSettings {
         TOUCH_GLOW_COLOR, TOUCH_GLOW_SIZE, SQUISH, TAP_BUZZ, SCROLL_FADE, SELECTOR,
         SELECTOR_MAGNIFY, STRETCH, SOLID_IN_BATTERY_SAVER, MUSIC_PLAYER, PLACE_SHADE,
         PLACE_NOTIFICATIONS, PLACE_LOCKSCREEN, PLACE_VOLUME, VOLUME_FROSTED, PLACE_POWER_MENU,
-        PLACE_DIALOGS, POWER_MENU_BLUR_BEHIND, MORPH, MORPH_STYLE, MORPH_SPEED, MORPH_VOLUME,
-        MORPH_POWER_MENU, MORPH_TILES, MORPH_NOTIFICATIONS, MORPH_HEADS_UP, MELT, MELT_REACH,
+        PLACE_DIALOGS, POWER_MENU_BLUR_BEHIND, PLACE_FOLDERS, MORPH, MORPH_STYLE, MORPH_SPEED,
+        MORPH_VOLUME, MORPH_POWER_MENU, MORPH_TILES, MORPH_NOTIFICATIONS, MORPH_HEADS_UP, MELT,
+        MELT_REACH,
     };
 
     public static final int MIN_BLUR_STRENGTH = 0;
@@ -729,7 +733,7 @@ public final class GlassSettings {
         // way too, unless it's asked not to.
         final boolean carriesText = PLACE_DIALOGS.equals(place)
                 || PLACE_POWER_MENU.equals(place) || PLACE_SHADE.equals(place)
-                || PLACE_NOTIFICATIONS.equals(place)
+                || PLACE_NOTIFICATIONS.equals(place) || PLACE_FOLDERS.equals(place)
                 || (PLACE_VOLUME.equals(place)
                         && getInt(resolver, VOLUME_FROSTED, 1) == 1);
         final boolean adapts = getInt(resolver, ADAPTIVE, 1) == 1
