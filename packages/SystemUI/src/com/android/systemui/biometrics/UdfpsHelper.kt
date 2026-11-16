@@ -104,11 +104,13 @@ class UdfpsHelper(
         }
     }
 
+    private var dimLayerAdded = false
+
     private val displayListener = object : DisplayManager.DisplayListener {
         override fun onDisplayAdded(displayId: Int) {}
 
         override fun onDisplayChanged(displayId: Int) {
-            if (displayId == Display.DEFAULT_DISPLAY) {
+            if (dimLayerAdded && displayId == Display.DEFAULT_DISPLAY) {
                 brightnessToAlpha()
                 windowManager.updateViewLayout(view, dimLayoutParams)
             }
@@ -166,6 +168,7 @@ class UdfpsHelper(
     fun addDimLayer() {
         brightnessToAlpha()
         windowManager.addView(view, dimLayoutParams)
+        dimLayerAdded = true
         displayManager.registerDisplayListener(
             displayListener,
             null,
@@ -174,6 +177,8 @@ class UdfpsHelper(
     }
 
     fun removeDimLayer() {
+        dimLayerAdded = false
+        alphaAnimator.cancel()
         windowManager.removeView(view)
         displayManager.unregisterDisplayListener(displayListener)
     }
