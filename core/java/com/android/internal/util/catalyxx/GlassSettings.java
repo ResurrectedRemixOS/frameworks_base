@@ -59,7 +59,10 @@ public final class GlassSettings {
     public static final int COLOR_FROSTED = 0;
     /** Glass in a light shade of the theme's accent color. */
     public static final int COLOR_THEME = 1;
-    /** Android's own tint for blurred panels; {@link #TINT} doesn't change it. */
+    /**
+     * Android's own tint for blurred panels. {@link #TINT} keeps it as it is at
+     * {@link #DEFAULT_TINT}, and takes it to clear and solid at either end.
+     */
     public static final int COLOR_ANDROID = 2;
     /** {@link #COLOR} while no color is picked. */
     public static final int COLOR_UNSET = -1;
@@ -695,12 +698,21 @@ public final class GlassSettings {
 
     /**
      * The tint of glass color {@code color} at {@code tint}, one of the {@code COLOR_} values
-     * and 0 to 100; {@code androidColor} for {@link #COLOR_ANDROID}.
+     * and 0 to 100; {@code androidColor} for {@link #COLOR_ANDROID}, made clearer or more solid.
      */
     public static int tintColor(Context context, int color, int tint, int androidColor) {
+        final int t = Math.max(MIN_TINT, Math.min(MAX_TINT, tint));
         final int rgb;
         if (color == COLOR_ANDROID) {
-            return androidColor;
+            final int alpha = Color.alpha(androidColor);
+            if (alpha == 0) {
+                return androidColor;
+            }
+            final float a = t <= DEFAULT_TINT
+                    ? alpha * t / (float) DEFAULT_TINT
+                    : alpha + (255 - alpha) * (t - DEFAULT_TINT)
+                            / (float) (MAX_TINT - DEFAULT_TINT);
+            return (Math.round(a) << 24) | (androidColor & 0xffffff);
         } else if (color == COLOR_THEME) {
             // A light accent shade, so it frosts like the white instead of darkening
             rgb = context.getColor(context.getResources().getConfiguration().isNightModeActive()
@@ -709,7 +721,6 @@ public final class GlassSettings {
         } else {
             rgb = Color.WHITE;
         }
-        final int t = Math.max(MIN_TINT, Math.min(MAX_TINT, tint));
         return (Math.round(t * 255f / MAX_TINT) << 24) | (rgb & 0xffffff);
     }
 
