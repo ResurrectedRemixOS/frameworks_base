@@ -76,6 +76,7 @@ class NowBarSettings(private val context: Context) {
             width = int(KEY_WIDTH, base.width),
             corners = int(KEY_CORNERS, base.corners).coerceIn(20, 100),
             raise = int(KEY_RAISE, base.raise).coerceIn(0, 40),
+            aboveFingerprint = get(KEY_ABOVE_FINGERPRINT, base.aboveFingerprint),
             art = int(KEY_ART, base.art),
             buttons = int(KEY_BUTTONS, base.buttons),
             text = int(KEY_TEXT, base.text),
@@ -120,6 +121,7 @@ class NowBarSettings(private val context: Context) {
         const val KEY_WIDTH = "now_bar_width"
         const val KEY_CORNERS = "now_bar_corners"
         const val KEY_RAISE = "now_bar_raise"
+        const val KEY_ABOVE_FINGERPRINT = "now_bar_above_fingerprint"
         const val KEY_ART = "now_bar_art"
         const val KEY_BUTTONS = "now_bar_buttons"
         const val KEY_TEXT = "now_bar_text"
@@ -134,6 +136,7 @@ class NowBarSettings(private val context: Context) {
             KEY_WIDTH, KEY_CORNERS, KEY_RAISE, KEY_ART, KEY_BUTTONS, KEY_TEXT, KEY_TEXT_SIZE,
             KEY_LIVE_APPS,
             KEY_PIN,
+            KEY_ABOVE_FINGERPRINT,
         )
 
         private fun get(context: Context, key: String, def: Boolean) =

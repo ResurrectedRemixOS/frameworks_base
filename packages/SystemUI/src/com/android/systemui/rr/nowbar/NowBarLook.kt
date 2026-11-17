@@ -16,6 +16,7 @@ data class NowBarLook(
     val width: Int = WIDTH_NORMAL,
     val corners: Int = 100,
     val raise: Int = 0,
+    val aboveFingerprint: Boolean = false,
     val art: Int = ART_CIRCLE,
     val buttons: Int = BUTTONS_ALL,
     val text: Int = TEXT_ONE_LINE,

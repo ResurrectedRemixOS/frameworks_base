@@ -411,7 +411,8 @@ class NowBarView(
         val new = repository.settings.look
         if (new == look) return
         val moved = new.height != look.height || new.width != look.width ||
-            new.raise != look.raise || new.more != look.more
+            new.raise != look.raise || new.more != look.more ||
+            new.aboveFingerprint != look.aboveFingerprint
         look = new
         layoutForLook()
         if (moved) onLayoutChanged()
