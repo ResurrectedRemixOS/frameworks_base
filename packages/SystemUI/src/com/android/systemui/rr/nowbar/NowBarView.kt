@@ -4,6 +4,9 @@
  */
 package com.android.systemui.rr.nowbar
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -12,6 +15,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
@@ -25,6 +29,9 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
+import android.view.animation.AccelerateInterpolator
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.LinearInterpolator
 import android.widget.Chronometer
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -115,6 +122,22 @@ class NowBarView(
     private val scoreText = TextView(context)
     private val statusText = TextView(context)
 
+    // A goal's moment: the scorer's color floods the bar under a banner.
+    private val flood = FrameLayout(context)
+    private val floodBg = GradientDrawable()
+    private val floodClip = Rect()
+    private val net = GoalNet(context)
+    private val ball = View(context)
+    private val banner = LinearLayout(context)
+    private val bannerLogo = ImageView(context)
+    private val bannerLabel = TextView(context)
+    private val bannerSub = TextView(context)
+    private val decelerate = DecelerateInterpolator(1.6f)
+    private val accelerate = AccelerateInterpolator(1.4f)
+    private var celebrated: NowBarGoal? = null
+    private var goalKey: String? = null
+    private var goalAnim: ValueAnimator? = null
+
     private var items: List<NowBarItem> = emptyList()
     private var currentKey: String? = null
     private var dozing = false
@@ -184,6 +207,7 @@ class NowBarView(
         buildMusic()
         buildTexts()
         buildScore()
+        buildGoal()
         layoutForLook()
 
         // ACTION_TIME_TICK is a non-wakeup alarm, so it stalls while the always-on display
@@ -342,6 +366,56 @@ class NowBarView(
         row.addView(scoreRow, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
     }
 
+    private fun buildGoal() {
+        flood.background = floodBg
+        floodBg.orientation = GradientDrawable.Orientation.LEFT_RIGHT
+        flood.visibility = GONE
+        net.pivotX = 0f
+        flood.addView(net, LayoutParams(dp(74f).toInt(), LayoutParams.MATCH_PARENT, Gravity.END))
+        ball.background = LayerDrawable(arrayOf(
+            GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.WHITE)
+            },
+            GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xFF1B1B1B.toInt())
+            },
+        )).apply {
+            val inset = dp(4f).toInt()
+            setLayerInset(1, inset, inset, inset, inset)
+        }
+        val ballSize = dp(12f).toInt()
+        flood.addView(ball, LayoutParams(ballSize, ballSize, Gravity.START or Gravity.CENTER_VERTICAL))
+        bannerLabel.setTextColor(Color.WHITE)
+        bannerLabel.typeface = Typeface.create(Typeface.DEFAULT, 800, true)
+        bannerLabel.letterSpacing = 0.06f
+        bannerLabel.isAllCaps = true
+        bannerLabel.includeFontPadding = false
+        bannerLabel.isSingleLine = true
+        bannerSub.setTextColor(0xDBFFFFFF.toInt())
+        bannerSub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+        bannerSub.typeface = semibold
+        bannerSub.isSingleLine = true
+        bannerSub.ellipsize = TextUtils.TruncateAt.END
+        val column = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(bannerLabel)
+            addView(bannerSub)
+        }
+        banner.orientation = LinearLayout.HORIZONTAL
+        banner.gravity = Gravity.CENTER_VERTICAL
+        val logo = dp(32f).toInt()
+        banner.addView(bannerLogo, LinearLayout.LayoutParams(logo, logo).apply {
+            marginEnd = dp(10f).toInt()
+        })
+        banner.addView(column)
+        flood.addView(banner, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT,
+            Gravity.START).apply { marginStart = dp(14f).toInt() })
+        capsule.addView(flood, capsule.indexOfChild(dots),
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         dozing = statusBarStateController.isDozing
@@ -363,6 +437,7 @@ class NowBarView(
         chronometer.stop()
         dismissCard()
         popup?.dismiss()
+        goalAnim?.cancel()
     }
 
     override fun onNowBarChanged(items: List<NowBarItem>) {
@@ -370,6 +445,7 @@ class NowBarView(
         if (items.none { it.key == currentKey }) currentKey = items.firstOrNull()?.key
         bind()
         card?.update(items.firstOrNull { it.key == card?.key })
+        celebrate()
     }
 
     override fun onDozingChanged(isDozing: Boolean) {
@@ -382,7 +458,9 @@ class NowBarView(
             translationX = 0f
             translationY = 0f
         }
+        if (dozing) goalAnim?.cancel()
         bind()
+        celebrate()
     }
 
     override fun onStateChanged(newState: Int) {
@@ -469,6 +547,7 @@ class NowBarView(
         val item = (if (dozing) items.firstOrNull {
             it.type == NowBarType.LIVE && it.packageName == settings.pinned
         } else null) ?: items.getOrNull(index)
+        if (goalKey != null && item?.key != goalKey) goalAnim?.cancel()
         if (item == null || (dozing && !settings.aod)) {
             visibility = GONE
             chronometer.stop()
@@ -743,6 +822,83 @@ class NowBarView(
         }
     }
 
+    /** Plays the last goal once, when it is fresh and the bar is in view to show it. */
+    private fun celebrate() {
+        val goal = repository.goal ?: return
+        if (goal === celebrated || dozing || dragging || card != null || !isShown) return
+        if (SystemClock.elapsedRealtime() - goal.at > GOAL_FRESH_MS) return
+        val score = items.firstOrNull { it.key == goal.key }?.score ?: return
+        celebrated = goal
+        currentKey = goal.key
+        bind()
+        goalAnim?.cancel()
+        val first = goal.team == 1
+        val color = (if (first) score.color1 else score.color2) ?: accentFill
+        floodBg.colors = intArrayOf(ColorUtils.blendARGB(color, Color.BLACK, 0.2f), color)
+        bannerLogo.setImageDrawable(if (first) score.logo1 else score.logo2)
+        bannerLogo.visibility = if (bannerLogo.drawable != null) VISIBLE else GONE
+        bannerLabel.text = goal.label
+        bannerLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, if (compact) 20f else 26f)
+        bannerSub.text = "${if (first) score.team1 else score.team2} · " +
+            "${score.score1} – ${score.score2}"
+        bannerSub.visibility = if (compact) GONE else VISIBLE
+        net.visibility = if (goal.net) VISIBLE else GONE
+        ball.visibility = if (goal.net) VISIBLE else GONE
+        flood.visibility = VISIBLE
+        goalKey = goal.key
+        goalAnim = ValueAnimator.ofFloat(0f, GOAL_MS.toFloat()).apply {
+            duration = GOAL_MS
+            interpolator = LinearInterpolator()
+            addUpdateListener { stepGoal(it.animatedValue as Float) }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) = endGoal()
+            })
+            start()
+        }
+    }
+
+    /** The goal's moment at [t] ms: out with the score, the flood and banner, back to the score. */
+    private fun stepGoal(t: Float) {
+        val w = flood.width
+        val shift = dp(12f)
+        val leave = decelerate.getInterpolation(phase(t, 0, 280))
+        val come = decelerate.getInterpolation(phase(t, 2900, 3300))
+        scoreRow.alpha = if (t < 2900) 1f - leave else come
+        scoreRow.translationY = if (t < 2900) shift * leave else shift * (1f - come)
+        val fill = decelerate.getInterpolation(phase(t, 0, 350))
+        val drain = accelerate.getInterpolation(phase(t, 2600, 3020))
+        floodClip.set((w * drain).roundToInt(), 0, (w * fill).roundToInt(), flood.height)
+        flood.clipBounds = floodClip
+        val enter = decelerate.getInterpolation(phase(t, 350, 650))
+        val exit = phase(t, 2500, 2800)
+        banner.alpha = enter * (1f - exit)
+        banner.translationX = dp(26f) * (1f - enter) - dp(10f) * exit
+        if (ball.visibility == VISIBLE) {
+            val flight = phase(t, 380, 940)
+            ball.translationX = dp(44f) + (w - dp(108f)) * accelerate.getInterpolation(flight)
+            ball.rotation = 320f * flight
+            ball.alpha = if (t < 380) 0f else 1f - phase(t, 940, 1010)
+            val bulge = phase(t, 900, 1400)
+            net.scaleX = when {
+                bulge < 0.3f -> 1f + 0.22f * bulge / 0.3f
+                bulge < 0.66f -> 1.22f - 0.28f * (bulge - 0.3f) / 0.36f
+                else -> 0.94f + 0.06f * (bulge - 0.66f) / 0.34f
+            }
+        }
+    }
+
+    private fun endGoal() {
+        goalAnim = null
+        goalKey = null
+        flood.visibility = GONE
+        flood.clipBounds = null
+        scoreRow.alpha = 1f
+        scoreRow.translationY = 0f
+        net.scaleX = 1f
+    }
+
+    private fun phase(t: Float, from: Int, to: Int) = ((t - from) / (to - from)).coerceIn(0f, 1f)
+
     private fun run(action: NowBarAction) {
         action.run?.invoke()
         action.intent?.let { send(it) }
@@ -840,6 +996,7 @@ class NowBarView(
     }
 
     private fun startGesture(ev: MotionEvent, hold: Boolean) {
+        goalAnim?.cancel()
         wave.poke()
         downX = ev.x
         downY = ev.y
@@ -926,6 +1083,31 @@ class NowBarView(
     private fun dp(value: Float) = value * density
 
     private fun px(dpValue: Int) = (dpValue * density).toInt()
+
+    /** The net a goal's ball lands in: a diagonal mesh behind a white post. */
+    private class GoalNet(context: Context) : View(context) {
+        private val density = context.resources.displayMetrics.density
+        private val mesh = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0x38FFFFFF
+            strokeWidth = density
+        }
+        private val post = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0x8CFFFFFF.toInt()
+            strokeWidth = 2 * density
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            val w = width.toFloat()
+            val h = height.toFloat()
+            var x = -h
+            while (x < w) {
+                canvas.drawLine(x, 0f, x + h, h, mesh)
+                canvas.drawLine(x + h, 0f, x, h, mesh)
+                x += 8 * density
+            }
+            canvas.drawLine(density, 0f, density, h, post)
+        }
+    }
 
     /** One dot per activity, when the bar is set to show them. */
     private class Dots(context: Context) : View(context) {
@@ -1017,6 +1199,10 @@ class NowBarView(
         const val TWO_LINES_FROM = 70
         const val DARK_FILL = 0xFF0D0809.toInt()
         const val REMIXER_ACTION = "com.resurrection.settings.NOW_BAR"
+        /** A goal's moment, in ms. */
+        const val GOAL_MS = 3400L
+        /** How long a goal waits for the bar to be in view, in ms. */
+        const val GOAL_FRESH_MS = 2 * 60_000L
         val BURN_IN_STEPS_X = floatArrayOf(0f, 3f, 5f, 3f, 0f, -3f, -5f, -3f)
         val BURN_IN_STEPS_Y = floatArrayOf(0f, -2f, -4f, -6f, -4f, -2f, 0f, -2f)
     }

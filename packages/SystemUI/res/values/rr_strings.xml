@@ -100,6 +100,13 @@
     <string name="now_bar_minutes_left"><xliff:g id="minutes" example="4">%1$d</xliff:g> min left</string>
     <string name="now_bar_minutes"><xliff:g id="minutes" example="12">%1$d</xliff:g> min</string>
     <string name="now_bar_versus"><xliff:g id="team" example="Lakers">%1$s</xliff:g> vs <xliff:g id="team" example="Celtics">%2$s</xliff:g></string>
+    <string name="now_bar_goal">Goal</string>
+    <string name="now_bar_touchdown">Touchdown</string>
+    <string name="now_bar_field_goal">Field goal</string>
+    <plurals name="now_bar_runs">
+        <item quantity="one">Run</item>
+        <item quantity="other"><xliff:g id="runs" example="2">%1$d</xliff:g> runs</item>
+    </plurals>
 
     <!-- Charge report -->
     <string name="charge_report_channel">Charge reports</string>

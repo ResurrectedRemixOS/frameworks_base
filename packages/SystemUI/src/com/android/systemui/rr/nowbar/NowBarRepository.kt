@@ -39,6 +39,8 @@ import com.android.systemui.rr.media.MediaArt
 import com.android.systemui.statusbar.NotificationListener
 import android.bluetooth.BluetoothDevice
 import com.android.settingslib.bluetooth.BluetoothUtils
+import com.android.systemui.statusbar.commandline.Command
+import com.android.systemui.statusbar.commandline.CommandRegistry
 import com.android.systemui.statusbar.policy.BatteryController
 import com.android.systemui.statusbar.policy.BluetoothController
 import com.android.systemui.statusbar.policy.FlashlightController
@@ -65,6 +67,7 @@ constructor(
     private val wakefulnessLifecycle: WakefulnessLifecycle,
     @Background private val bgExecutor: Executor,
     val activityStarter: ActivityStarter,
+    private val commandRegistry: CommandRegistry,
 ) : CoreStartable, NotificationListener.NotificationHandler {
 
     fun interface Listener {
@@ -95,6 +98,9 @@ constructor(
     private var flashlightItem: NowBarItem? = null
     private lateinit var sessionManager: MediaSessionManager
     private val scores = NowBarScores(context, handler, bgExecutor) { publish() }
+
+    /** The last goal seen as it happened, in a game the bar shows. */
+    val goal: NowBarGoal? get() = scores.goal
 
     private val sessionsListener =
         MediaSessionManager.OnActiveSessionsChangedListener { sessions ->
@@ -143,6 +149,7 @@ constructor(
 
     override fun start() {
         instance = this
+        commandRegistry.registerCommand("now-bar-goal") { GoalCommand() }
         val observer = object : ContentObserver(handler) {
             override fun onChange(selfChange: Boolean) {
                 val liveApps = settings.liveApps
@@ -186,7 +193,9 @@ constructor(
     override fun dump(pw: PrintWriter, args: Array<out String>) {
         pw.println("NowBar: enabled=${settings.enabled} sessions=${controllers.size} " +
             "media=${mediaItem != null} notifications=${notificationItems.keys} hidden=$hidden " +
-            "scores=${settings.scores}:${scores.items.size}")
+            "scores=${settings.scores}:${scores.items.size} goal=${scores.goal?.let {
+                "${it.key}:${it.team}:${it.label}"
+            }}")
         pw.println("  items=${items.map { "${it.type}:${it.key}" }}")
         for (listener in listeners) {
             val view = listener as? android.view.View
@@ -198,6 +207,18 @@ constructor(
             pw.println("  view=${view.javaClass.simpleName} attached=${view.isAttachedToWindow} " +
                 "visibility=${view.visibility} alpha=${view.alpha} size=${view.width}x${view.height} " +
                 "at=${at[0]},${at[1]} shown=${view.isShown}")
+        }
+    }
+
+    private inner class GoalCommand : Command {
+        override fun execute(pw: PrintWriter, args: List<String>) {
+            val team = if (args.firstOrNull() == "2") 2 else 1
+            pw.println(if (scores.testGoal(team)) "Goal for team $team" else "No game in the Now Bar")
+        }
+
+        override fun help(pw: PrintWriter) {
+            pw.println("Usage: adb shell cmd statusbar now-bar-goal [1|2]")
+            pw.println("Plays the Now Bar's goal moment for a team of the first game.")
         }
     }
 

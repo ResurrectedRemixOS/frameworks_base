@@ -14,10 +14,12 @@ import android.app.smartspace.SmartspaceTargetEvent
 import android.app.smartspace.uitemplatedata.HeadToHeadTemplateData
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Handler
 import android.os.Parcel
+import android.os.SystemClock
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
@@ -25,8 +27,11 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.RemoteViews
 import android.widget.TextView
+import androidx.core.graphics.ColorUtils
+import androidx.palette.graphics.Palette
 import com.android.systemui.res.R
 import java.util.concurrent.Executor
+import kotlin.math.max
 
 /** Live game scores for the Now Bar from Google's At a Glance, through a Smartspace session. */
 class NowBarScores(
@@ -38,6 +43,11 @@ class NowBarScores(
     var items: List<NowBarItem> = emptyList()
         private set
 
+    /** The last score change seen as it happened. */
+    var goal: NowBarGoal? = null
+        private set
+
+    private var readAt = 0L
     private var source = SOURCE_OFF
     private var session: SmartspaceSession? = null
     private var shown = false
@@ -110,8 +120,56 @@ class NowBarScores(
 
     private fun set(list: List<NowBarItem>) {
         if (list.isEmpty() && items.isEmpty()) return
+        val now = SystemClock.elapsedRealtime()
+        // A score that moved while nothing was watching is old news.
+        if (now - readAt < FRESH_MS) {
+            for (item in list) {
+                val after = item.score ?: continue
+                val before = items.firstOrNull { it.key == item.key }?.score ?: continue
+                goalOf(item.key, before, after, now)?.let { goal = it }
+            }
+        }
+        readAt = now
         items = list
         onChanged()
+    }
+
+    /** Plays a goal for [team] of the first game, to try the bar's moment. */
+    fun testGoal(team: Int): Boolean {
+        val item = items.firstOrNull() ?: return false
+        goal = NowBarGoal(item.key, team, context.getString(R.string.now_bar_goal), true,
+            SystemClock.elapsedRealtime())
+        onChanged()
+        return true
+    }
+
+    private fun goalOf(key: String, before: NowBarScore, after: NowBarScore, at: Long): NowBarGoal? {
+        val b1 = before.score1.toString().toIntOrNull() ?: return null
+        val b2 = before.score2.toString().toIntOrNull() ?: return null
+        val a1 = after.score1.toString().toIntOrNull() ?: return null
+        val a2 = after.score2.toString().toIntOrNull() ?: return null
+        val team = when {
+            a1 > b1 && a2 == b2 -> 1
+            a2 > b2 && a1 == b1 -> 2
+            else -> return null
+        }
+        val points = if (team == 1) a1 - b1 else a2 - b2
+        val league = after.league?.toString()?.lowercase() ?: ""
+        val words = league.split(NOT_LETTERS).filter { it.isNotEmpty() }.toSet()
+        val label = when {
+            words.any { it in BASKETBALL } -> return null
+            words.any { it in GRIDIRON } || "college football" in league -> when {
+                points >= 6 -> context.getString(R.string.now_bar_touchdown)
+                points == 3 -> context.getString(R.string.now_bar_field_goal)
+                else -> return null
+            }
+            words.any { it in BASEBALL } ->
+                context.resources.getQuantityString(R.plurals.now_bar_runs, points, points)
+            // Without a league, a score this high is a basket.
+            words.isEmpty() && max(a1, a2) > 30 -> return null
+            else -> return NowBarGoal(key, team, context.getString(R.string.now_bar_goal), true, at)
+        }
+        return NowBarGoal(key, team, label, false, at)
     }
 
     // At a Glance
@@ -223,7 +281,7 @@ class NowBarScores(
         val status = texts.filterNot { it in teams || SCORE.matches(it) || it == league }
             .joinToString(" · ").ifEmpty { league ?: "" }
         return score(teams[0], teams[1], scores.getOrElse(0) { "" }, scores.getOrElse(1) { "" },
-            logos[teams[0]], logos[teams[1]], status)
+            logos[teams[0]], logos[teams[1]], status, league)
     }
 
     private fun intentOf(action: SmartspaceAction): PendingIntent? =
@@ -234,7 +292,8 @@ class NowBarScores(
     // Both
 
     private fun score(team1: String, team2: String, score1: String, score2: String,
-            logo1: Drawable?, logo2: Drawable?, status: CharSequence?): NowBarScore? {
+            logo1: Drawable?, logo2: Drawable?, status: CharSequence?,
+            league: CharSequence? = null): NowBarScore? {
         val t1 = team1.trim()
         val t2 = team2.trim()
         if (!isTeam(t1) || !isTeam(t2)) return null
@@ -243,7 +302,24 @@ class NowBarScores(
         // Both scores, or none before the game; never one.
         if ((s1.isEmpty() || s2.isEmpty()) && s1 != s2) return null
         if (s1.isNotEmpty() && (!SCORE.matches(s1) || !SCORE.matches(s2))) return null
-        return NowBarScore(t1, t2, s1, s2, logo1, logo2, status?.toString()?.trim())
+        return NowBarScore(t1, t2, s1, s2, logo1, logo2, status?.toString()?.trim(), league,
+            teamColor(logo1), teamColor(logo2))
+    }
+
+    private fun teamColor(logo: Drawable?): Int? {
+        val bitmap = (logo as? BitmapDrawable)?.bitmap ?: return null
+        val palette = try {
+            Palette.from(bitmap).generate()
+        } catch (e: RuntimeException) {
+            return null
+        }
+        val swatch = palette.vibrantSwatch ?: palette.darkVibrantSwatch ?: palette.dominantSwatch
+            ?: return null
+        var color = swatch.rgb or Color.BLACK
+        while (ColorUtils.calculateContrast(Color.WHITE, color) < 4.5) {
+            color = ColorUtils.blendARGB(color, Color.BLACK, 0.15f)
+        }
+        return color
     }
 
     private fun item(key: String, score: NowBarScore, intent: PendingIntent?) = NowBarItem(
@@ -277,6 +353,12 @@ class NowBarScores(
         private const val AOD_SUFFIX = "_aod"
         private val NAME_SCORE = Regex("""^(\D{2,40}?)\s+(\d{1,3})$""")
         private val SCORE = Regex("""^\d{1,3}$""")
+        private val NOT_LETTERS = Regex("""[^\p{L}]+""")
+        private val BASKETBALL = setOf("nba", "wnba", "basketball", "euroleague", "ncaab", "nbl")
+        private val GRIDIRON = setOf("nfl", "ncaaf", "cfl", "ufl", "xfl")
+        private val BASEBALL = setOf("mlb", "baseball", "npb", "kbo")
+        /** Updates further apart than this don't make a goal. */
+        private const val FRESH_MS = 3 * 60_000L
         private val SPACES = Regex("""\s+""")
     }
 }

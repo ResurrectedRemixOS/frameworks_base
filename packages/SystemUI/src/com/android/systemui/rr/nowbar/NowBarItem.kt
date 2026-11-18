@@ -43,6 +43,23 @@ class NowBarScore(
     val logo1: Drawable?,
     val logo2: Drawable?,
     val status: CharSequence?,
+    /** The competition, as the card names it. */
+    val league: CharSequence? = null,
+    /** Each team's color from its crest, dark enough under white text. */
+    val color1: Int? = null,
+    val color2: Int? = null,
+)
+
+/** A team just scored in a game the Now Bar shows, for the bar to celebrate once. */
+class NowBarGoal(
+    val key: String,
+    /** 1 or 2, the team that scored. */
+    val team: Int,
+    val label: CharSequence,
+    /** A ball flies into a net with it. */
+    val net: Boolean,
+    /** [android.os.SystemClock.elapsedRealtime] when it was seen. */
+    val at: Long,
 )
 
 /** A Live Update's progress bar: Android 16's segments and points, as fractions of the bar. */
