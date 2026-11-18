@@ -9442,7 +9442,7 @@
     <!-- @SystemApi Allows an application to query over global data in AppSearch.
            @hide -->
     <permission android:name="android.permission.READ_GLOBAL_APP_SEARCH_DATA"
-                android:protectionLevel="internal|role"
+                android:protectionLevel="signature|role"
                 android:permissionFlags="allowedInPrivateComputeCore" />
 
     <!-- Allows an application to query over global data in AppSearch that's visible to the
