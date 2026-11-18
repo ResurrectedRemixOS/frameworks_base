@@ -87,7 +87,8 @@ class NowBarChipView @JvmOverloads constructor(
         this.items = items
         popup?.let { open ->
             val key = open.key ?: return@let
-            open.update(items.firstOrNull { it.key == key }, NowBarRepository.instance?.goalFor(key))
+            val game = items.firstOrNull { it.key == key }
+            open.update(game, game?.let { NowBarRepository.instance?.lineFor(it) })
         }
         update()
     }
@@ -97,7 +98,7 @@ class NowBarChipView @JvmOverloads constructor(
         popup = NowBarScorePopup(context) {
             popup = null
             update()
-        }.also { it.show(game, NowBarRepository.instance?.goalFor(game.key)) }
+        }.also { it.show(game, NowBarRepository.instance?.lineFor(game)) }
         update()
     }
 

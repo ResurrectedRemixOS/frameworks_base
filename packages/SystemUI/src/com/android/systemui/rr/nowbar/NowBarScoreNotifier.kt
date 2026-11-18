@@ -24,7 +24,7 @@ class NowBarScoreNotifier(private val context: Context) {
     private var started = false
     private var channelMade = false
 
-    fun update(games: List<NowBarItem>, goalFor: (String) -> NowBarGoal?) {
+    fun update(games: List<NowBarItem>, lineFor: (NowBarItem) -> CharSequence?) {
         val live = games.filter { it.score?.score1?.isNotEmpty() == true }
         if (!started) {
             started = true
@@ -45,16 +45,16 @@ class NowBarScoreNotifier(private val context: Context) {
         ensureChannel()
         for (item in live) {
             val score = item.score ?: continue
-            val goal = goalFor(item.key)
+            val line = lineFor(item)
             val shows = listOf(score.team1, score.score1, score.score2, score.team2, score.status,
-                score.league, goal?.at).joinToString("|")
+                score.league, line).joinToString("|")
             if (posted[item.key] == shows) continue
             posted[item.key] = shows
-            manager.notifyAsUser(item.key, ID, build(item, score, goal), UserHandle.CURRENT)
+            manager.notifyAsUser(item.key, ID, build(item, score, line), UserHandle.CURRENT)
         }
     }
 
-    private fun build(item: NowBarItem, score: NowBarScore, goal: NowBarGoal?): Notification {
+    private fun build(item: NowBarItem, score: NowBarScore, line: CharSequence?): Notification {
         val name = context.getString(R.string.now_bar_scores_channel)
         return Notification.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.rr_nowbar_sports)
@@ -62,7 +62,7 @@ class NowBarScoreNotifier(private val context: Context) {
             .setContentText(listOfNotNull(score.status, score.league).joinToString(" · "))
             .setStyle(Notification.DecoratedCustomViewStyle())
             .setCustomContentView(NowBarScoreViews.row(context, score))
-            .setCustomBigContentView(NowBarScoreViews.card(context, score, goal, dark = false))
+            .setCustomBigContentView(NowBarScoreViews.card(context, score, line, dark = false))
             .setContentIntent(item.contentIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

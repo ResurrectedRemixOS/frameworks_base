@@ -265,6 +265,8 @@
 
     <!-- the ability to rename notifications posted by other apps -->
     <uses-permission android:name="android.permission.SUBSTITUTE_NOTIFICATION_APP_NAME" />
+    <!-- Google's game records for the Now Bar's score cards, like One UI reads them -->
+    <uses-permission android:name="android.permission.READ_GLOBAL_APP_SEARCH_DATA" />
 
     <!-- shortcut manager -->
     <uses-permission android:name="android.permission.RESET_SHORTCUT_MANAGER_THROTTLING" />

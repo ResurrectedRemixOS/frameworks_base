@@ -48,6 +48,9 @@ class NowBarScores(
         private set
 
     private val goals = HashMap<String, NowBarGoal>()
+    private val appSearch = NowBarAppSearch(context, bgExecutor)
+    private val moments = HashMap<String, String>()
+    private var askedFor = ""
     private var readAt = 0L
     private var source = SOURCE_OFF
     private var session: SmartspaceSession? = null
@@ -117,6 +120,7 @@ class NowBarScores(
         }
         session = null
         set(emptyList())
+        appSearch.close()
     }
 
     private fun set(list: List<NowBarItem>) {
@@ -136,8 +140,42 @@ class NowBarScores(
         goals.keys.retainAll(list.map { it.key }.toSet())
         readAt = now
         items = list
+        askGoogle(list)
         onChanged()
     }
+
+    /** Google's own line on each game under way, read again as their scores and clocks move. */
+    private fun askGoogle(list: List<NowBarItem>) {
+        val live = list.filter { it.score?.score1?.isNotEmpty() == true }
+        val state = live.joinToString { "${it.key}:${it.score?.score1}:${it.score?.score2}:${it.score?.status}" }
+        if (state == askedFor) return
+        askedFor = state
+        if (live.isEmpty()) {
+            moments.clear()
+            return
+        }
+        val keys = live.map { it.key }
+        appSearch.games { docs, _ ->
+            val lines = HashMap<String, String>()
+            for (key in keys) {
+                val target = key.removePrefix(KEY_PREFIX)
+                val doc = docs?.firstOrNull {
+                    it.id == target || target.endsWith(it.id) ||
+                        it.id.endsWith(target.substringAfterLast(':'))
+                } ?: continue
+                NowBarAppSearch.text(doc, MOMENT)?.let { lines[key] = it }
+            }
+            handler.post {
+                if (lines == moments) return@post
+                moments.clear()
+                moments.putAll(lines)
+                onChanged()
+            }
+        }
+    }
+
+    /** Google's own line on [key]'s game, when System UI may read it. */
+    fun momentFor(key: String): String? = moments[key]
 
     /** The last goal seen as it happened in [key]'s game. */
     fun goalFor(key: String): NowBarGoal? = goals[key]
@@ -199,7 +237,7 @@ class NowBarScores(
         val score = (if (h2h != null) headToHead(target, h2h) else extrasScore(target) ?: cardScore(target))
             ?: return null
         val action = target.headerAction ?: target.baseAction
-        return item("glance:${target.smartspaceTargetId}", score, action?.let(::intentOf))
+        return item("$KEY_PREFIX${target.smartspaceTargetId}", score, action?.let(::intentOf))
     }
 
     private fun headToHead(target: SmartspaceTarget, h2h: HeadToHeadTemplateData): NowBarScore? {
@@ -368,6 +406,8 @@ class NowBarScores(
         private val BASKETBALL = setOf("nba", "wnba", "basketball", "euroleague", "ncaab", "nbl")
         private val GRIDIRON = setOf("nfl", "ncaaf", "cfl", "ufl", "xfl")
         private val BASEBALL = setOf("mlb", "baseball", "npb", "kbo")
+        private const val KEY_PREFIX = "glance:"
+        private const val MOMENT = "shortDescription"
         /** Updates further apart than this don't make a goal. */
         private const val FRESH_MS = 3 * 60_000L
         private val SPACES = Regex("""\s+""")

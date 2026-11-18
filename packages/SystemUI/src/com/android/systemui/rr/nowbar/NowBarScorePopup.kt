@@ -25,7 +25,7 @@ class NowBarScorePopup(private val context: Context, private val onDismiss: () -
     var key: String? = null
         private set
 
-    fun show(item: NowBarItem, goal: NowBarGoal?) {
+    fun show(item: NowBarItem, line: CharSequence?) {
         root.setOnClickListener { dismiss() }
         card.background = GradientDrawable().apply {
             cornerRadius = dp(28f)
@@ -44,7 +44,7 @@ class NowBarScorePopup(private val context: Context, private val onDismiss: () -
             marginEnd = dp(12f).toInt()
             topMargin = SystemBarUtils.getStatusBarHeight(context) + dp(6f).toInt()
         })
-        if (!update(item, goal)) return
+        if (!update(item, line)) return
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -71,7 +71,7 @@ class NowBarScorePopup(private val context: Context, private val onDismiss: () -
     }
 
     /** The game's newest state; false, and closed, once it is no longer under way. */
-    fun update(item: NowBarItem?, goal: NowBarGoal?): Boolean {
+    fun update(item: NowBarItem?, line: CharSequence?): Boolean {
         val score = item?.score
         if (item == null || score == null || score.score1.isEmpty()) {
             dismiss()
@@ -79,7 +79,7 @@ class NowBarScorePopup(private val context: Context, private val onDismiss: () -
         }
         key = item.key
         intent = item.contentIntent
-        val views = NowBarScoreViews.card(context, score, goal, dark = true)
+        val views = NowBarScoreViews.card(context, score, line, dark = true)
         val shown = content
         if (shown == null) {
             content = views.apply(context, card).also { card.addView(it) }

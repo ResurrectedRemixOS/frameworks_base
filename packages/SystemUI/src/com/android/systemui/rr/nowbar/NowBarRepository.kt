@@ -4,9 +4,11 @@
  */
 package com.android.systemui.rr.nowbar
 
+import android.Manifest.permission.READ_GLOBAL_APP_SEARCH_DATA
 import android.app.Notification
 import android.app.Person
 import android.app.WallpaperColors
+import android.app.appsearch.GenericDocument
 import android.content.Context
 import android.content.pm.PackageManager
 import android.database.ContentObserver
@@ -46,7 +48,9 @@ import com.android.systemui.statusbar.policy.BluetoothController
 import com.android.systemui.statusbar.policy.FlashlightController
 import com.android.systemui.statusbar.policy.KeyguardStateController
 import java.io.PrintWriter
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import kotlin.math.max
 
@@ -107,6 +111,13 @@ constructor(
     /** The last goal seen as it happened in [key]'s game. */
     fun goalFor(key: String) = scores.goalFor(key)
 
+    /** The score card's last line: Google's own when System UI may read it, else a goal seen here. */
+    fun lineFor(item: NowBarItem): CharSequence? {
+        val score = item.score ?: return null
+        return scores.momentFor(item.key)
+            ?: scores.goalFor(item.key)?.let { NowBarScoreViews.goalLine(context, it, score) }
+    }
+
     private val sessionsListener =
         MediaSessionManager.OnActiveSessionsChangedListener { sessions ->
             updateSessions(sessions ?: emptyList())
@@ -155,6 +166,7 @@ constructor(
     override fun start() {
         instance = this
         commandRegistry.registerCommand("now-bar-goal") { GoalCommand() }
+        commandRegistry.registerCommand("now-bar-appsearch", { AppSearchCommand() }, bgExecutor)
         val observer = object : ContentObserver(handler) {
             override fun onChange(selfChange: Boolean) {
                 val liveApps = settings.liveApps
@@ -228,6 +240,44 @@ constructor(
         }
     }
 
+    private inner class AppSearchCommand : Command {
+        override fun execute(pw: PrintWriter, args: List<String>) {
+            val granted = context.checkSelfPermission(READ_GLOBAL_APP_SEARCH_DATA) ==
+                PackageManager.PERMISSION_GRANTED
+            pw.println("READ_GLOBAL_APP_SEARCH_DATA ${if (granted) "granted" else "not granted"}")
+            val done = CountDownLatch(1)
+            var found: List<GenericDocument>? = null
+            var error: String? = null
+            val appSearch = NowBarAppSearch(context) { it.run() }
+            appSearch.games { docs, why ->
+                found = docs
+                error = why
+                done.countDown()
+            }
+            if (!done.await(5, TimeUnit.SECONDS)) {
+                pw.println("No answer from AppSearch")
+                return
+            }
+            appSearch.close()
+            val docs = found
+            if (docs == null) {
+                pw.println("Failed: $error")
+                return
+            }
+            pw.println("${docs.size} games from Google")
+            for (doc in docs) {
+                pw.println("${doc.namespace} ${doc.id} ${doc.schemaType}")
+                pw.println("  shortDescription=${NowBarAppSearch.text(doc, "shortDescription")}")
+            }
+            if (args.firstOrNull() == "full") docs.firstOrNull()?.let { pw.println(it) }
+        }
+
+        override fun help(pw: PrintWriter) {
+            pw.println("Usage: adb shell cmd statusbar now-bar-appsearch [full]")
+            pw.println("Reads Google's game records the way One UI does; full prints the first.")
+        }
+    }
+
     fun addListener(listener: Listener) {
         listeners += listener
         listener.onNowBarChanged(items)
@@ -269,7 +319,7 @@ constructor(
         }
         val callsChanged = callKeys != lockscreenCallKeys
         lockscreenCallKeys = callKeys
-        scoreNotifier.update(scores.items.filter { settings.shows(it.type) }, scores::goalFor)
+        scoreNotifier.update(scores.items.filter { settings.shows(it.type) }, ::lineFor)
         listeners.toList().forEach { it.onNowBarChanged(items) }
         if (callsChanged) lockscreenListener?.invoke()
     }

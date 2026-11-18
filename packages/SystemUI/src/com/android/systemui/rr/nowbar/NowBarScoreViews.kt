@@ -17,7 +17,7 @@ import com.android.systemui.res.R
 object NowBarScoreViews {
 
     /** The whole card; [dark] for a card on its own dark background rather than the shade's. */
-    fun card(context: Context, score: NowBarScore, goal: NowBarGoal?, dark: Boolean): RemoteViews =
+    fun card(context: Context, score: NowBarScore, line: CharSequence?, dark: Boolean): RemoteViews =
         RemoteViews(context.packageName, R.layout.now_bar_score_card).apply {
             setTextViewText(R.id.score_card_team1, score.team1)
             setTextViewText(R.id.score_card_team2, score.team2)
@@ -29,9 +29,8 @@ object NowBarScoreViews {
             val league = score.league
             setTextViewText(R.id.score_card_league, league ?: "")
             setViewVisibility(R.id.score_card_league, if (league.isNullOrEmpty()) View.GONE else View.VISIBLE)
-            val moment = goal?.let { moment(context, it, score) }
-            setTextViewText(R.id.score_card_moment, moment ?: "")
-            val shown = if (moment == null) View.GONE else View.VISIBLE
+            setTextViewText(R.id.score_card_moment, line ?: "")
+            val shown = if (line.isNullOrEmpty()) View.GONE else View.VISIBLE
             setViewVisibility(R.id.score_card_divider, shown)
             setViewVisibility(R.id.score_card_moment, shown)
             if (dark) {
@@ -60,7 +59,8 @@ object NowBarScoreViews {
     /** The score the chip and the card's title read out. */
     fun title(score: NowBarScore) = "${score.team1} ${score.score1} – ${score.score2} ${score.team2}"
 
-    private fun moment(context: Context, goal: NowBarGoal, score: NowBarScore): String {
+    /** A goal seen here, for when Google's own line can't be read. */
+    fun goalLine(context: Context, goal: NowBarGoal, score: NowBarScore): String {
         val label = goal.label.toString().uppercase(context.resources.configuration.locales[0])
         val team = if (goal.team == 1) score.team1 else score.team2
         return listOfNotNull("$label! $team", goal.minute?.takeIf { it.isNotEmpty() })
