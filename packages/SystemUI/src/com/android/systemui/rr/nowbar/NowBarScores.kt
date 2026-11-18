@@ -203,7 +203,8 @@ class NowBarScores(
         fun walk(view: View) {
             if (view.visibility != View.VISIBLE) return
             when (view) {
-                is TextView -> view.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let(texts::add)
+                is TextView -> view.text?.toString()?.replace(SPACES, " ")?.trim()
+                    ?.takeIf { it.isNotEmpty() }?.let(texts::add)
                 is ImageView -> {
                     val team = view.contentDescription?.toString()?.trim()
                     val logo = view.drawable
@@ -214,7 +215,8 @@ class NowBarScores(
         }
         walk(root)
         if (DEBUG) Log.d(TAG, "Card texts=$texts logos=${logos.keys}")
-        val teams = logos.keys.toList()
+        // Buttons carry descriptions too; the teams' abbreviations are also written out.
+        val teams = logos.keys.filter { it in texts }.takeIf { it.size == 2 } ?: logos.keys.toList()
         val scores = texts.filter(SCORE::matches)
         if (teams.size != 2 || (scores.size != 0 && scores.size != 2)) return null
         val league = texts.firstOrNull()?.takeIf { it !in teams && !SCORE.matches(it) }
@@ -275,5 +277,6 @@ class NowBarScores(
         private const val AOD_SUFFIX = "_aod"
         private val NAME_SCORE = Regex("""^(\D{2,40}?)\s+(\d{1,3})$""")
         private val SCORE = Regex("""^\d{1,3}$""")
+        private val SPACES = Regex("""\s+""")
     }
 }
