@@ -58,6 +58,8 @@ class NowBarGoal(
     val label: CharSequence,
     /** A ball flies into a net with it. */
     val net: Boolean,
+    /** The game's clock when it went in. */
+    val minute: CharSequence?,
     /** [android.os.SystemClock.elapsedRealtime] when it was seen. */
     val at: Long,
 )

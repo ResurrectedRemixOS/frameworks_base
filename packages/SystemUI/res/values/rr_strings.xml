@@ -101,6 +101,8 @@
     <string name="now_bar_minutes"><xliff:g id="minutes" example="12">%1$d</xliff:g> min</string>
     <string name="now_bar_versus"><xliff:g id="team" example="Lakers">%1$s</xliff:g> vs <xliff:g id="team" example="Celtics">%2$s</xliff:g></string>
     <string name="now_bar_goal">Goal</string>
+    <string name="now_bar_scores_channel">Live scores</string>
+    <string name="now_bar_scores_source" translatable="false">Google</string>
     <string name="now_bar_touchdown">Touchdown</string>
     <string name="now_bar_field_goal">Field goal</string>
     <plurals name="now_bar_runs">

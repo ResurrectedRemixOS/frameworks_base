@@ -102,6 +102,11 @@ constructor(
     /** The last goal seen as it happened, in a game the bar shows. */
     val goal: NowBarGoal? get() = scores.goal
 
+    private val scoreNotifier = NowBarScoreNotifier(context)
+
+    /** The last goal seen as it happened in [key]'s game. */
+    fun goalFor(key: String) = scores.goalFor(key)
+
     private val sessionsListener =
         MediaSessionManager.OnActiveSessionsChangedListener { sessions ->
             updateSessions(sessions ?: emptyList())
@@ -186,8 +191,9 @@ constructor(
     private fun updateScoresShown() {
         val awake = wakefulnessLifecycle.wakefulness == WakefulnessLifecycle.WAKEFULNESS_WAKING ||
             wakefulnessLifecycle.wakefulness == WakefulnessLifecycle.WAKEFULNESS_AWAKE
+        // Unlocked too, for the status bar chip and the shade's score cards.
         scores.setShown(
-            awake && keyguardStateController.isShowing && !keyguardStateController.isOccluded)
+            awake && !(keyguardStateController.isShowing && keyguardStateController.isOccluded))
     }
 
     override fun dump(pw: PrintWriter, args: Array<out String>) {
@@ -263,6 +269,7 @@ constructor(
         }
         val callsChanged = callKeys != lockscreenCallKeys
         lockscreenCallKeys = callKeys
+        scoreNotifier.update(scores.items.filter { settings.shows(it.type) }, scores::goalFor)
         listeners.toList().forEach { it.onNowBarChanged(items) }
         if (callsChanged) lockscreenListener?.invoke()
     }

@@ -47,6 +47,7 @@ class NowBarScores(
     var goal: NowBarGoal? = null
         private set
 
+    private val goals = HashMap<String, NowBarGoal>()
     private var readAt = 0L
     private var source = SOURCE_OFF
     private var session: SmartspaceSession? = null
@@ -126,19 +127,28 @@ class NowBarScores(
             for (item in list) {
                 val after = item.score ?: continue
                 val before = items.firstOrNull { it.key == item.key }?.score ?: continue
-                goalOf(item.key, before, after, now)?.let { goal = it }
+                goalOf(item.key, before, after, now)?.let {
+                    goal = it
+                    goals[item.key] = it
+                }
             }
         }
+        goals.keys.retainAll(list.map { it.key }.toSet())
         readAt = now
         items = list
         onChanged()
     }
 
+    /** The last goal seen as it happened in [key]'s game. */
+    fun goalFor(key: String): NowBarGoal? = goals[key]
+
     /** Plays a goal for [team] of the first game, to try the bar's moment. */
     fun testGoal(team: Int): Boolean {
         val item = items.firstOrNull() ?: return false
-        goal = NowBarGoal(item.key, team, context.getString(R.string.now_bar_goal), true,
-            SystemClock.elapsedRealtime())
+        val test = NowBarGoal(item.key, team, context.getString(R.string.now_bar_goal), true,
+            item.score?.status, SystemClock.elapsedRealtime())
+        goal = test
+        goals[item.key] = test
         onChanged()
         return true
     }
@@ -167,9 +177,10 @@ class NowBarScores(
                 context.resources.getQuantityString(R.plurals.now_bar_runs, points, points)
             // Without a league, a score this high is a basket.
             words.isEmpty() && max(a1, a2) > 30 -> return null
-            else -> return NowBarGoal(key, team, context.getString(R.string.now_bar_goal), true, at)
+            else -> return NowBarGoal(key, team, context.getString(R.string.now_bar_goal), true,
+                after.status, at)
         }
-        return NowBarGoal(key, team, label, false, at)
+        return NowBarGoal(key, team, label, false, after.status, at)
     }
 
     // At a Glance

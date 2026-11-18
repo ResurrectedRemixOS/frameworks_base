@@ -44,4 +44,12 @@
         android:textSize="12sp"
         android:textStyle="bold"
         android:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/now_bar_chip_icon2"
+        android:layout_width="13dp"
+        android:layout_height="13dp"
+        android:layout_marginStart="4dp"
+        android:importantForAccessibility="no"
+        android:visibility="gone" />
 </com.android.systemui.rr.nowbar.NowBarChipView>

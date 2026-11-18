@@ -17,6 +17,7 @@ import com.android.systemui.dagger.SysUISingleton
 import com.android.systemui.dagger.qualifiers.Main
 import com.android.systemui.plugins.statusbar.StatusBarStateController
 import com.android.systemui.rr.nowbar.NowBarRepository
+import com.android.systemui.rr.nowbar.NowBarScoreNotifier
 import com.android.systemui.securelockdevice.domain.interactor.SecureLockDeviceInteractor
 import com.android.systemui.settings.UserTracker
 import com.android.systemui.statusbar.NotificationLockscreenUserManager
@@ -214,6 +215,8 @@ constructor(
             !isLockedOrLocking -> SHOW
             // That call is already in the Now Bar.
             NowBarRepository.instance?.showsCallOnLockscreen(entry.key) == true -> HIDE
+            // So is that game.
+            NowBarScoreNotifier.isScoreCard(entry.sbn) -> HIDE
             // Notifications not allowed on the lockscreen, always hide.
             !lockscreenUserManager.shouldShowLockscreenNotifications() -> HIDE
             // secure lock device mode is enabled always disallow
