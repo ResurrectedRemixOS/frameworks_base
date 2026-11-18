@@ -390,7 +390,6 @@ class NowBarView(
         bannerLabel.setTextColor(Color.WHITE)
         bannerLabel.typeface = Typeface.create(Typeface.DEFAULT, 800, true)
         bannerLabel.letterSpacing = 0.06f
-        bannerLabel.isAllCaps = true
         bannerLabel.includeFontPadding = false
         bannerLabel.isSingleLine = true
         bannerSub.setTextColor(0xDBFFFFFF.toInt())
@@ -464,6 +463,7 @@ class NowBarView(
     }
 
     override fun onStateChanged(newState: Int) {
+        if (newState == StatusBarState.KEYGUARD) celebrate()
         if (newState != StatusBarState.SHADE) return
         dismissCard()
         popup?.dismiss()
@@ -825,7 +825,8 @@ class NowBarView(
     /** Plays the last goal once, when it is fresh and the bar is in view to show it. */
     private fun celebrate() {
         val goal = repository.goal ?: return
-        if (goal === celebrated || dozing || dragging || card != null || !isShown) return
+        if (goal === celebrated || dozing || dragging || card != null || !isShown ||
+            statusBarStateController.state != StatusBarState.KEYGUARD) return
         if (SystemClock.elapsedRealtime() - goal.at > GOAL_FRESH_MS) return
         val score = items.firstOrNull { it.key == goal.key }?.score ?: return
         celebrated = goal
@@ -837,7 +838,7 @@ class NowBarView(
         floodBg.colors = intArrayOf(ColorUtils.blendARGB(color, Color.BLACK, 0.2f), color)
         bannerLogo.setImageDrawable(if (first) score.logo1 else score.logo2)
         bannerLogo.visibility = if (bannerLogo.drawable != null) VISIBLE else GONE
-        bannerLabel.text = goal.label
+        bannerLabel.text = goal.label.toString().uppercase(resources.configuration.locales[0])
         bannerLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, if (compact) 20f else 26f)
         bannerSub.text = "${if (first) score.team1 else score.team2} · " +
             "${score.score1} – ${score.score2}"
@@ -1027,6 +1028,7 @@ class NowBarView(
     }
 
     private fun settle() {
+        dragging = false
         val vx = velocity?.let {
             it.computeCurrentVelocity(1000)
             it.xVelocity
