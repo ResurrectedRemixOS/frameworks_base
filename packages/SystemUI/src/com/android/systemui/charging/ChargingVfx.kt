@@ -17,8 +17,6 @@
 package com.android.systemui.charging
 
 import android.content.Context
-import android.os.UserHandle
-import android.provider.Settings
 import android.util.Log
 import com.android.systemui.res.R
 
@@ -30,7 +28,6 @@ import com.android.systemui.res.R
 object ChargingVfx {
     private const val TAG = "ChargingVfx"
     private const val LIBRARY = "nativeChargingRing"
-    private const val SETTING = "rr_charging_ring"
     const val OVERLAY_PACKAGE = "com.android.systemui.charging_animation.supervooc"
 
     private val ASSET_TEXTURES = arrayOf("ring_4_in_1.png", "glow.png", "flash.png")
@@ -50,10 +47,6 @@ object ChargingVfx {
             false
         }
         if (!wantVfx) {
-            return false
-        }
-        if (Settings.System.getIntForUser(context.contentResolver, SETTING, 1,
-                UserHandle.USER_CURRENT) == 0) {
             return false
         }
         val lib = isLibraryAvailable()

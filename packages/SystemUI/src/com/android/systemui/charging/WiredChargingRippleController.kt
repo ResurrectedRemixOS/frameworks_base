@@ -23,9 +23,13 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.om.OverlayManager
 import android.content.res.Configuration
+import android.database.ContentObserver
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.PointF
+import android.net.Uri
 import android.os.BatteryManager
 import android.os.Handler
 import android.os.Looper
@@ -47,10 +51,14 @@ import com.android.internal.logging.UiEvent
 import com.android.internal.logging.UiEventLogger
 import com.android.settingslib.Utils
 import com.android.settingslib.fuelgauge.BatteryStatus
+import com.android.systemui.bliss.charging.BlissChargingAnimationView
 import com.android.systemui.dagger.SysUISingleton
+import com.android.systemui.dagger.qualifiers.Background
 import com.android.systemui.flags.FeatureFlags
 import com.android.systemui.flags.Flags
 import com.android.systemui.res.R
+import com.android.systemui.rr.charging.RrChargingStyles
+import com.android.systemui.rr.charging.RrChargingView
 import com.android.systemui.statusbar.commandline.Command
 import com.android.systemui.statusbar.commandline.CommandRegistry
 import com.android.systemui.statusbar.policy.BatteryController
@@ -61,6 +69,7 @@ import com.oplus.vfxsdk.charge.charging.IChargingEngineControl
 import com.oplus.vfxsdk.charge.charging.VFXChargingTextureView
 import java.io.File
 import java.io.PrintWriter
+import java.util.concurrent.Executor
 import javax.inject.Inject
 import kotlin.math.min
 import kotlin.math.pow
@@ -101,6 +110,7 @@ constructor(
     private val windowManager: WindowManager,
     private val systemClock: SystemClock,
     private val uiEventLogger: UiEventLogger,
+    @Background private val bgExecutor: Executor,
 ) {
     private var pluggedIn: Boolean = false
     private var batteryLevel: Int = 0
@@ -156,10 +166,33 @@ constructor(
     @VisibleForTesting
     var axChargingCircleView: AXChargingCircleView = AXChargingCircleView(context, attrs = null)
 
+    private var drawnView: RrChargingView? = null
+    private var blissView: BlissChargingAnimationView? = null
+
+    private val styleObserver =
+        object : ContentObserver(mainHandler) {
+            override fun onChange(selfChange: Boolean, uri: Uri?) {
+                if (uri?.lastPathSegment == RrChargingStyles.PREVIEW) {
+                    preview()
+                } else {
+                    bgExecutor.execute { syncStyleOverlay() }
+                }
+            }
+        }
+
     init {
         pluggedIn = batteryController.isPluggedIn
         commandRegistry.registerCommand("charging-ripple") { ChargingRippleCommand() }
         updateRippleColor()
+        for (key in arrayOf(RrChargingStyles.SETTING, RrChargingStyles.PREVIEW)) {
+            context.contentResolver.registerContentObserver(
+                Settings.System.getUriFor(key),
+                false,
+                styleObserver,
+                UserHandle.USER_ALL,
+            )
+        }
+        bgExecutor.execute { syncStyleOverlay() }
     }
 
     fun registerCallbacks() {
@@ -237,18 +270,130 @@ constructor(
     }
 
     fun startRipple() {
-        if (ChargingVfx.isEnabled(context)) {
-            if (handshakePending || vfxContainer?.parent != null) return
-            // fast_chg_type often reads 0 at plug-in; wait for the handshake.
-            handshakePending = true
-            handshakeAttempts = 0
-            pollHandshakeAndStart()
-        } else if (context.resources.getBoolean(R.bool.config_useCustomChargingAnim)) {
-            startCustomRipple()
-        } else {
-            startAospRipple()
+        startStyle(RrChargingStyles.selected(context))
+    }
+
+    private fun startStyle(selected: String) {
+        val style =
+            selected.ifEmpty {
+                if (ChargingVfx.isEnabled(context)) RrChargingStyles.ONEPLUS else RrChargingStyles.NEON
+            }
+        when (style) {
+            RrChargingStyles.NONE -> {}
+            RrChargingStyles.PIXEL -> startAospRipple()
+            RrChargingStyles.ONEPLUS -> {
+                if (!ChargingVfx.isEnabled(context)) return startStyle(RrChargingStyles.NEON)
+                if (handshakePending || vfxContainer?.parent != null) return
+                // fast_chg_type often reads 0 at plug-in; wait for the handshake.
+                handshakePending = true
+                handshakeAttempts = 0
+                pollHandshakeAndStart()
+            }
+            RrChargingStyles.MOTO,
+            RrChargingStyles.NOTHING -> {
+                if (context.resources.getBoolean(R.bool.config_useCustomChargingAnim)) {
+                    startCustomRipple()
+                } else {
+                    startStyle(RrChargingStyles.NEON)
+                }
+            }
+            else -> {
+                val bliss = RrChargingStyles.blissStyle(style)
+                if (bliss != 0) startBlissAnimation(bliss) else startDrawn(style)
+            }
         }
     }
+
+    private fun preview() {
+        val value =
+            Settings.System.getStringForUser(
+                context.contentResolver,
+                RrChargingStyles.PREVIEW,
+                UserHandle.USER_CURRENT,
+            ) ?: return
+        val style = value.substringBefore(':')
+        if (style == RrChargingStyles.ONEPLUS && !batteryController.isPluggedIn) return
+        if (style in RrChargingStyles.OVERLAYS) {
+            mainHandler.postDelayed({ startStyle(style) }, OVERLAY_SETTLE_MS)
+        } else {
+            startStyle(style)
+        }
+    }
+
+    private fun syncStyleOverlay() {
+        val om = context.getSystemService(OverlayManager::class.java) ?: return
+        val style = RrChargingStyles.selected(context)
+        for ((key, pkg) in RrChargingStyles.OVERLAYS) {
+            try {
+                val info = om.getOverlayInfo(pkg, UserHandle.SYSTEM) ?: continue
+                val want = key == style
+                if (info.isEnabled != want) om.setEnabled(pkg, want, UserHandle.SYSTEM)
+            } catch (e: Exception) {
+                Log.w(TAG, "overlay $pkg", e)
+            }
+        }
+    }
+
+    private fun startDrawn(style: String) {
+        if (drawnView != null) return
+        val view = RrChargingStyles.drawn(context, style) ?: return startAospRipple()
+        val sticky = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val level = sticky?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        view.level = if (level in 0..100) level else batteryLevel
+        view.speed = RrChargingStyles.speed(context, sticky)
+        view.label = RrChargingStyles.label(context, view.speed, RrChargingStyles.watts(sticky))
+        val port = portPosition()
+        view.portX = port.x
+        view.portY = port.y
+        drawnView = view
+        windowLayoutParams.packageName = context.opPackageName
+        view.addOnAttachStateChangeListener(
+            object : View.OnAttachStateChangeListener {
+                override fun onViewDetachedFromWindow(v: View) {}
+
+                override fun onViewAttachedToWindow(v: View) {
+                    view.removeOnAttachStateChangeListener(this)
+                    view.play {
+                        if (drawnView === view) drawnView = null
+                        safeRemoveWindowOverlay(view)
+                    }
+                }
+            }
+        )
+        windowManager.addView(view, windowLayoutParams)
+        uiEventLogger.log(WiredChargingRippleEvent.CHARGING_RIPPLE_PLAYED)
+    }
+
+    private fun startBlissAnimation(style: Int) {
+        if (blissView != null) return
+        val view = BlissChargingAnimationView(context)
+        blissView = view
+        view.configure(style, batteryLevel) {
+            if (blissView === view) blissView = null
+            safeRemoveWindowOverlay(view)
+        }
+        windowLayoutParams.packageName = context.opPackageName
+        view.addOnAttachStateChangeListener(
+            object : View.OnAttachStateChangeListener {
+                override fun onViewDetachedFromWindow(v: View) {}
+
+                override fun onViewAttachedToWindow(v: View) {
+                    view.removeOnAttachStateChangeListener(this)
+                    view.startAnimation()
+                }
+            }
+        )
+        windowManager.addView(view, windowLayoutParams)
+        uiEventLogger.log(WiredChargingRippleEvent.CHARGING_RIPPLE_PLAYED)
+    }
+
+    private fun portPosition(): PointF =
+        when (context.display?.rotation) {
+            Surface.ROTATION_90 -> PointF(normalizedPortPosY, 1 - normalizedPortPosX)
+            Surface.ROTATION_180 -> PointF(1 - normalizedPortPosX, 1 - normalizedPortPosY)
+            Surface.ROTATION_270 -> PointF(1 - normalizedPortPosY, normalizedPortPosX)
+            else -> PointF(normalizedPortPosX, normalizedPortPosY)
+        }
 
     /**
      * Removes a window overlay only if it is still attached. The ripple animation end callback
@@ -759,6 +904,7 @@ constructor(
         handshakePending = false
         mainHandler.removeCallbacks(handshakePoll)
         if (vfxContainer != null) fadeOutVfxWindow()
+        drawnView?.finish()
     }
 
     private fun applyVfxWindowFlags() {
@@ -889,11 +1035,11 @@ constructor(
 
     inner class ChargingRippleCommand : Command {
         override fun execute(pw: PrintWriter, args: List<String>) {
-            startRipple()
+            startStyle(args.firstOrNull() ?: RrChargingStyles.selected(context))
         }
 
         override fun help(pw: PrintWriter) {
-            pw.println("Usage: adb shell cmd statusbar charging-ripple")
+            pw.println("Usage: adb shell cmd statusbar charging-ripple [style]")
         }
     }
 
@@ -906,6 +1052,7 @@ constructor(
     companion object {
         private const val TAG = "WiredChargingRipple"
         private const val CHARGING_ANIM_MODE_CIRCLE = 1
+        private const val OVERLAY_SETTLE_MS = 700L
         private const val HANDSHAKE_POLL_MS = 150L
         // 2.2 s, as on Alpha.
         private const val HANDSHAKE_ATTEMPTS = 15

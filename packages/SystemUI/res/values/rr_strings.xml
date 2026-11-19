@@ -66,6 +66,10 @@
     <string name="now_bar_charged">Charged</string>
     <string name="now_bar_flashlight_on">Flashlight on</string>
     <string name="now_bar_buds">Earbuds</string>
+    <string name="rr_charging_anim_normal">Charging</string>
+    <string name="rr_charging_anim_fast">Fast charging</string>
+    <string name="rr_charging_anim_super">Super fast charging</string>
+    <string name="rr_charging_anim_watts"><xliff:g id="state" example="Fast charging">%1$s</xliff:g> \u00b7 <xliff:g id="watts" example="33">%2$d</xliff:g> W</string>
     <!-- Earbud batteries: left, right and case [CHAR LIMIT=12] -->
     <string name="now_bar_buds_left">L <xliff:g id="level" example="82">%1$d</xliff:g></string>
     <string name="now_bar_buds_right">R <xliff:g id="level" example="79">%1$d</xliff:g></string>
