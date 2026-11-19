@@ -1135,3 +1135,12 @@ filegroup {
         "proguard_kotlin.flags",
     ],
 }
+
+filegroup {
+    name: "RRChargingViews-srcs",
+    srcs: [
+        "src/com/android/systemui/rr/charging/*View.kt",
+        "src/com/android/systemui/bliss/charging/BlissChargingAnimationView.kt",
+        "src/com/android/systemui/charging/ChargingAnimationView.kt",
+    ],
+}

@@ -1,0 +1,15 @@
+package {
+    default_applicable_licenses: ["frameworks_base_packages_SystemUI_license"],
+}
+
+android_library {
+    name: "RRChargingViewsLib",
+    srcs: [":RRChargingViews-srcs"],
+    manifest: "AndroidManifest.xml",
+    platform_apis: true,
+    static_libs: [
+        "SurfaceEffectsViewLib",
+        "androidx.core_core-ktx",
+    ],
+    libs: ["SettingsLib"],
+}
