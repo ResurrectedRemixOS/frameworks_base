@@ -27,6 +27,9 @@
 
     <!-- Whether device has turbo power charging support -->
     <java-symbol type="bool" name="config_hasTurboPowerCharger" />
+    <java-symbol type="integer" name="config_chargingFastWatts" />
+    <java-symbol type="integer" name="config_chargingMaxWatts" />
+    <java-symbol type="string" name="config_chargingMaxLabel" />
 
     <!-- Path to fast charging status file to detect whether an oem fast charger is active -->
     <java-symbol type="string" name="config_oemFastChargerStatusPath" />

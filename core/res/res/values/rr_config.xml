@@ -30,6 +30,11 @@
     <!-- Whether device has turbo power charging support -->
     <bool name="config_hasTurboPowerCharger">false</bool>
 
+    <!-- Wired charging watts in fast mode and at top speed, and the top speed's brand name -->
+    <integer name="config_chargingFastWatts">0</integer>
+    <integer name="config_chargingMaxWatts">0</integer>
+    <string name="config_chargingMaxLabel" translatable="false"></string>
+
     <!-- Path to fast charging status file to detect whether an oem fast charger is active -->
     <string name="config_oemFastChargerStatusPath" translatable="false"></string>
 
