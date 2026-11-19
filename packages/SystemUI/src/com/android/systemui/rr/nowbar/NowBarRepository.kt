@@ -247,13 +247,17 @@ constructor(
 
     private inner class GoalCommand : Command {
         override fun execute(pw: PrintWriter, args: List<String>) {
+            if (args.firstOrNull() == "final") {
+                pw.println(if (scores.testFinal()) "Full time" else "No game in the Now Bar")
+                return
+            }
             val team = if (args.firstOrNull() == "2") 2 else 1
             pw.println(if (scores.testGoal(team)) "Goal for team $team" else "No game in the Now Bar")
         }
 
         override fun help(pw: PrintWriter) {
-            pw.println("Usage: adb shell cmd statusbar now-bar-goal [1|2]")
-            pw.println("Plays the Now Bar's goal moment for a team of the first game.")
+            pw.println("Usage: adb shell cmd statusbar now-bar-goal [1|2|final]")
+            pw.println("Plays the Now Bar's goal moment for a team of the first game, or its end.")
         }
     }
 

@@ -135,6 +135,7 @@ class NowBarScores(
                     goal = it
                     goals[item.key] = it
                 }
+                finalOf(item.key, before, after, now)?.let { goal = it }
             }
         }
         goals.keys.retainAll(list.map { it.key }.toSet())
@@ -189,6 +190,43 @@ class NowBarScores(
         goals[item.key] = test
         onChanged()
         return true
+    }
+
+    fun testFinal(): Boolean {
+        val item = items.firstOrNull() ?: return false
+        val score = item.score ?: return false
+        goal = NowBarGoal(item.key, winner(score), finalLabel(score), false, score.status,
+            SystemClock.elapsedRealtime(), final = true)
+        onChanged()
+        return true
+    }
+
+    private fun finalOf(key: String, before: NowBarScore, after: NowBarScore, at: Long): NowBarGoal? {
+        if (!isFinal(after.status) || isFinal(before.status) ||
+            before.status?.any { it.isDigit() } != true ||
+            after.score1.toString().toIntOrNull() == null ||
+            after.score2.toString().toIntOrNull() == null
+        ) return null
+        return NowBarGoal(key, winner(after), finalLabel(after), false, after.status, at, final = true)
+    }
+
+    private fun isFinal(status: CharSequence?) = status != null && FINAL.containsMatchIn(status)
+
+    private fun winner(score: NowBarScore): Int {
+        val a = score.score1.toString().toIntOrNull() ?: return 0
+        val b = score.score2.toString().toIntOrNull() ?: return 0
+        return when {
+            a > b -> 1
+            b > a -> 2
+            else -> 0
+        }
+    }
+
+    private fun finalLabel(score: NowBarScore): String {
+        val words = (score.league?.toString()?.lowercase() ?: "").split(NOT_LETTERS)
+            .filter { it.isNotEmpty() }.toSet()
+        val american = words.any { it in BASKETBALL || it in GRIDIRON || it in BASEBALL || it in HOCKEY }
+        return context.getString(if (american) R.string.now_bar_final else R.string.now_bar_full_time)
     }
 
     private fun goalOf(key: String, before: NowBarScore, after: NowBarScore, at: Long): NowBarGoal? {
@@ -406,6 +444,8 @@ class NowBarScores(
         private val BASKETBALL = setOf("nba", "wnba", "basketball", "euroleague", "ncaab", "nbl")
         private val GRIDIRON = setOf("nfl", "ncaaf", "cfl", "ufl", "xfl")
         private val BASEBALL = setOf("mlb", "baseball", "npb", "kbo")
+        private val HOCKEY = setOf("nhl", "hockey", "ahl")
+        private val FINAL = Regex("""(?i)\b(ft|final|full[ -]?time|aet|ended|f/ot|f/so)\b""")
         private const val KEY_PREFIX = "glance:"
         private const val MOMENT = "shortDescription"
         /** Updates further apart than this don't make a goal. */

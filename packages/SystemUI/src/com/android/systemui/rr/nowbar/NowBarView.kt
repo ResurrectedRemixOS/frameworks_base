@@ -13,12 +13,15 @@ import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorFilter
 import android.graphics.Outline
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PathMeasure
+import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
 import android.os.SystemClock
@@ -29,6 +32,7 @@ import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.view.animation.AccelerateInterpolator
@@ -56,6 +60,7 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.random.Random
 
 /**
  * The Now Bar on the lock screen, between the shortcuts like One UI's: a capsule with the current
@@ -140,6 +145,7 @@ class NowBarView(
     private var celebrated: NowBarGoal? = null
     private var goalKey: String? = null
     private var goalAnim: ValueAnimator? = null
+    private var confetti: Confetti? = null
 
     private var items: List<NowBarItem> = emptyList()
     private var currentKey: String? = null
@@ -443,6 +449,7 @@ class NowBarView(
         dismissCard()
         popup?.dismiss()
         goalAnim?.cancel()
+        stopConfetti()
     }
 
     override fun onNowBarChanged(items: List<NowBarItem>) {
@@ -463,7 +470,10 @@ class NowBarView(
             translationX = 0f
             translationY = 0f
         }
-        if (dozing) goalAnim?.cancel()
+        if (dozing) {
+            goalAnim?.cancel()
+            stopConfetti()
+        }
         bind()
         celebrate()
     }
@@ -843,18 +853,32 @@ class NowBarView(
         bind()
         goalAnim?.cancel()
         val first = goal.team == 1
-        val color = (if (first) score.color1 else score.color2) ?: accentFill
+        val color = when (goal.team) {
+            1 -> score.color1
+            2 -> score.color2
+            else -> DRAW_FILL
+        } ?: accentFill
         floodBg.colors = intArrayOf(ColorUtils.blendARGB(color, Color.BLACK, 0.2f), color)
-        bannerLogo.setImageDrawable(if (first) score.logo1 else score.logo2)
+        bannerLogo.setImageDrawable(when (goal.team) {
+            1 -> score.logo1
+            2 -> score.logo2
+            else -> null
+        })
         bannerLogo.visibility = if (bannerLogo.drawable != null) VISIBLE else GONE
         bannerLabel.text = goal.label.toString().uppercase(resources.configuration.locales[0])
         bannerLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, if (compact) 20f else 26f)
-        bannerSub.text = "${if (first) score.team1 else score.team2} · " +
-            "${score.score1} – ${score.score2}"
+        val side = if (first) score.team1 else score.team2
+        val who = when {
+            !goal.final -> side
+            goal.team == 0 -> context.getString(R.string.now_bar_draw)
+            else -> context.getString(R.string.now_bar_wins, side)
+        }
+        bannerSub.text = "$who · ${score.score1} – ${score.score2}"
         bannerSub.visibility = if (compact) GONE else VISIBLE
         net.visibility = if (goal.net) VISIBLE else GONE
         ball.visibility = if (goal.net) VISIBLE else GONE
         flood.visibility = VISIBLE
+        if (goal.final && goal.team != 0) burst(color)
         goalKey = goal.key
         goalAnim = ValueAnimator.ofFloat(0f, GOAL_MS.toFloat()).apply {
             duration = GOAL_MS
@@ -895,6 +919,26 @@ class NowBarView(
                 else -> 0.94f + 0.06f * (bulge - 0.66f) / 0.34f
             }
         }
+    }
+
+    private fun burst(color: Int) {
+        val host = parent as? ViewGroup ?: return
+        stopConfetti()
+        val made = Confetti(density,
+            intArrayOf(color, Color.WHITE, GOLD, ColorUtils.blendARGB(color, Color.WHITE, 0.45f)))
+        made.setBounds(0, 0, host.width, host.height)
+        host.overlay.add(made)
+        confetti = made
+        made.start((left + capsule.left).toFloat(), (top + capsule.top).toFloat(),
+            capsule.width.toFloat()) {
+            host.overlay.remove(made)
+            if (confetti === made) confetti = null
+        }
+    }
+
+    private fun stopConfetti() {
+        confetti?.cancel()
+        confetti = null
     }
 
     private fun endGoal() {
@@ -1146,6 +1190,74 @@ class NowBarView(
     }
 
     /** A thin progress bar: a dim track and a filled part. */
+    private class Confetti(private val density: Float, private val colors: IntArray) : Drawable() {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val pieces = ArrayList<FloatArray>()
+        private var t = 0f
+        private var animator: ValueAnimator? = null
+
+        fun start(left: Float, top: Float, width: Float, onEnd: () -> Unit) {
+            repeat(COUNT) {
+                pieces += floatArrayOf(
+                    left + Random.nextFloat() * width,
+                    top + density * 6f,
+                    (Random.nextFloat() - 0.5f) * 280f * density,
+                    -(160f + Random.nextFloat() * 200f) * density,
+                    Random.nextFloat() * 360f,
+                    (Random.nextFloat() - 0.5f) * 720f,
+                    Random.nextInt(colors.size).toFloat(),
+                    if (Random.nextFloat() < 0.35f) 1f else 0f,
+                )
+            }
+            animator = ValueAnimator.ofFloat(0f, SECONDS).apply {
+                duration = (SECONDS * 1000f).toLong()
+                interpolator = LinearInterpolator()
+                addUpdateListener {
+                    t = it.animatedValue as Float
+                    invalidateSelf()
+                }
+                addListener(object : AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: Animator) = onEnd()
+                })
+                start()
+            }
+        }
+
+        fun cancel() {
+            animator?.cancel()
+        }
+
+        override fun draw(canvas: Canvas) {
+            val g = GRAVITY * density
+            val fade = 1f - ((t - FADE_FROM) / (SECONDS - FADE_FROM)).coerceIn(0f, 1f)
+            val w = density * 2.5f
+            val h = density * 4.5f
+            for (p in pieces) {
+                paint.color = ColorUtils.setAlphaComponent(colors[p[6].toInt()], (fade * 255f).roundToInt())
+                canvas.save()
+                canvas.translate(p[0] + p[2] * t, p[1] + p[3] * t + 0.5f * g * t * t)
+                canvas.rotate(p[4] + p[5] * t)
+                if (p[7] > 0f) canvas.drawCircle(0f, 0f, density * 3f, paint)
+                else canvas.drawRect(-w, -h, w, h, paint)
+                canvas.restore()
+            }
+        }
+
+        override fun setAlpha(alpha: Int) {}
+
+        override fun setColorFilter(colorFilter: ColorFilter?) {}
+
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity() = PixelFormat.TRANSLUCENT
+
+        private companion object {
+            const val COUNT = 36
+            const val SECONDS = 2.2f
+            const val FADE_FROM = 1.3f
+            const val GRAVITY = 420f
+        }
+    }
+
     private class EdgeLight(context: Context) : View(context) {
         private val density = context.resources.displayMetrics.density
         private val path = Path()
@@ -1302,6 +1414,8 @@ class NowBarView(
         const val COMPACT_BELOW = 60
         const val TWO_LINES_FROM = 70
         const val DARK_FILL = 0xFF0D0809.toInt()
+        const val DRAW_FILL = 0xFF3A3A40.toInt()
+        const val GOLD = 0xFFFFD34D.toInt()
         const val REMIXER_ACTION = "com.resurrection.settings.NOW_BAR"
         /** A goal's moment, in ms. */
         const val GOAL_MS = 3400L

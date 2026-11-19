@@ -54,7 +54,7 @@ class NowBarScore(
 /** A team just scored in a game the Now Bar shows, for the bar to celebrate once. */
 class NowBarGoal(
     val key: String,
-    /** 1 or 2, the team that scored. */
+    /** 1 or 2, the team that scored or won, else 0. */
     val team: Int,
     val label: CharSequence,
     /** A ball flies into a net with it. */
@@ -63,6 +63,7 @@ class NowBarGoal(
     val minute: CharSequence?,
     /** [android.os.SystemClock.elapsedRealtime] when it was seen. */
     val at: Long,
+    val final: Boolean = false,
 )
 
 /** A Live Update's progress bar: Android 16's segments and points, as fractions of the bar. */
