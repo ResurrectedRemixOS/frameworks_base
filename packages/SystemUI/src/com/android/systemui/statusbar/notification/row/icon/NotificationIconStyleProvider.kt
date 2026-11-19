@@ -25,6 +25,7 @@ import android.provider.Settings
 import android.service.notification.StatusBarNotification
 import com.android.systemui.Dumpable
 import com.android.systemui.dagger.SysUISingleton
+import com.android.systemui.dagger.qualifiers.Application
 import com.android.systemui.dump.DumpManager
 import com.android.systemui.statusbar.notification.collection.NotifCollectionCache
 import com.android.systemui.util.asIndenting
@@ -59,15 +60,22 @@ interface NotificationIconStyleProvider {
  * but not the logic which has to interact with a real package manager to check for an app icon.
  */
 abstract class NotificationIconStyleProviderBase : NotificationIconStyleProvider {
+    /**
+     * The SystemUI context, used to read settings. The [Context] given to [shouldShowAppIcon]
+     * can be a package context of the notification, and SettingsProvider rejects reads
+     * whose package does not match the calling uid.
+     */
+    protected abstract val settingsContext: Context
+
     override fun shouldShowAppIcon(notification: StatusBarNotification, context: Context): Boolean {
-        return appIconsEnabled(context) &&
+        return appIconsEnabled() &&
             !prefersSmallIcon(notification.notification) &&
             packageHasAppIcon(notification, context)
     }
 
-    private fun appIconsEnabled(context: Context): Boolean =
+    private fun appIconsEnabled(): Boolean =
         Settings.System.getIntForUser(
-            context.contentResolver,
+            settingsContext.contentResolver,
             Settings.System.NOTIFICATION_USE_APP_ICONS,
             1,
             UserHandle.USER_CURRENT,
@@ -83,7 +91,11 @@ abstract class NotificationIconStyleProviderBase : NotificationIconStyleProvider
 @SysUISingleton
 class NotificationIconStyleProviderImpl
 @Inject
-constructor(dumpManager: DumpManager, systemClock: SystemClock) :
+constructor(
+    dumpManager: DumpManager,
+    systemClock: SystemClock,
+    @Application override val settingsContext: Context,
+) :
     NotificationIconStyleProviderBase(), Dumpable {
     init {
         dumpManager.registerNormalDumpable(TAG, this)
