@@ -15,6 +15,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.PathMeasure
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -86,6 +88,7 @@ class NowBarView(
     private val row = FrameLayout(context)
     private val icon = ImageView(context)
     private val dots = Dots(context)
+    private val edge = EdgeLight(context)
     private var blur: BackgroundBlurDrawable? = null
     private var blurEnabled = false
     private var rootAlpha = 1f
@@ -208,6 +211,8 @@ class NowBarView(
         buildTexts()
         buildScore()
         buildGoal()
+        edge.color = accent
+        capsule.addView(edge, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         layoutForLook()
 
         // ACTION_TIME_TICK is a non-wakeup alarm, so it stalls while the always-on display
@@ -434,6 +439,7 @@ class NowBarView(
         setGlass(false)
         blur = null
         chronometer.stop()
+        edge.running = false
         dismissCard()
         popup?.dismiss()
         goalAnim?.cancel()
@@ -510,6 +516,7 @@ class NowBarView(
         radius = max(dp(8f), height / 2f * look.corners / 100f)
         capsuleBg.cornerRadius = radius
         peekBg.cornerRadius = radius
+        edge.radius = radius
         blur?.setCornerRadius(radius)
         capsule.invalidateOutline()
         (icon.layoutParams as LayoutParams).let {
@@ -551,6 +558,7 @@ class NowBarView(
         if (item == null || (dozing && !settings.aod)) {
             visibility = GONE
             chronometer.stop()
+            edge.running = false
             setGlass(false)
             return
         }
@@ -580,6 +588,7 @@ class NowBarView(
         val playing = music && item.playing && settings.wave && !compact
         wave.visibility = if (playing) VISIBLE else GONE
         wave.running = playing
+        edge.running = item.automation && !dozing
         capsule.contentDescription = listOfNotNull(item.title, item.text).joinToString(", ")
     }
 
@@ -1137,6 +1146,99 @@ class NowBarView(
     }
 
     /** A thin progress bar: a dim track and a filled part. */
+    private class EdgeLight(context: Context) : View(context) {
+        private val density = context.resources.displayMetrics.density
+        private val path = Path()
+        private val segment = Path()
+        private val measure = PathMeasure()
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        private var started = 0L
+        var color = Color.WHITE
+        var radius = 0f
+            set(value) {
+                if (field == value) return
+                field = value
+                outline()
+            }
+        var running = false
+            set(value) {
+                if (field == value) return
+                field = value
+                started = SystemClock.uptimeMillis()
+                visibility = if (value) VISIBLE else GONE
+                invalidate()
+            }
+
+        init {
+            visibility = GONE
+        }
+
+        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) = outline()
+
+        private fun outline() {
+            val inset = density * 1.5f
+            val r = max(0f, radius - inset)
+            path.reset()
+            path.addRoundRect(inset, inset, width - inset, height - inset, r, r, Path.Direction.CW)
+            measure.setPath(path, true)
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            if (!running) return
+            val length = measure.length
+            if (length <= 0f) return
+            val head = (SystemClock.uptimeMillis() - started) % LAP_MS / LAP_MS.toFloat() * length
+            val step = length * TAIL / STEPS
+            paint.strokeCap = Paint.Cap.BUTT
+            for (i in STEPS - 1 downTo 0) {
+                val fade = 1f - i / STEPS.toFloat()
+                val to = head - i * step
+                paint.strokeWidth = density * 6f
+                paint.color = ColorUtils.setAlphaComponent(color, (fade * fade * 60f).roundToInt())
+                stroke(canvas, to - step, to)
+                paint.strokeWidth = density * 2.5f
+                paint.color = ColorUtils.setAlphaComponent(
+                    ColorUtils.blendARGB(color, Color.WHITE, fade * fade * 0.6f),
+                    (fade * 255f).roundToInt(),
+                )
+                stroke(canvas, to - step, to)
+            }
+            paint.strokeCap = Paint.Cap.ROUND
+            paint.strokeWidth = density * 3f
+            paint.color = Color.WHITE
+            stroke(canvas, head - density * 6f, head)
+            postInvalidateDelayed(FRAME_MS)
+        }
+
+        private fun stroke(canvas: Canvas, from: Float, to: Float) {
+            val length = measure.length
+            var a = from
+            var b = to
+            if (b < 0f) {
+                a += length
+                b += length
+            }
+            if (a < 0f) {
+                strokeRange(canvas, a + length, length)
+                strokeRange(canvas, 0f, b)
+            } else {
+                strokeRange(canvas, a, b)
+            }
+        }
+
+        private fun strokeRange(canvas: Canvas, from: Float, to: Float) {
+            segment.reset()
+            if (measure.getSegment(from, to, segment, true)) canvas.drawPath(segment, paint)
+        }
+
+        private companion object {
+            const val LAP_MS = 2400L
+            const val FRAME_MS = 33L
+            const val TAIL = 0.3f
+            const val STEPS = 12
+        }
+    }
+
     private class ProgressLine(context: Context) : View(context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private var fraction = 0f
