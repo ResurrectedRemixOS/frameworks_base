@@ -14,8 +14,10 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.media.MediaMetadata
 import android.media.session.PlaybackState
+import android.os.BatteryManager
 import android.os.SystemClock
 import android.text.TextUtils
+import android.text.format.DateFormat
 import android.text.format.DateUtils
 import android.util.TypedValue
 import android.view.Gravity
@@ -30,6 +32,9 @@ import android.widget.TextView
 import com.android.settingslib.media.MediaOutputConstants
 import com.android.systemui.plugins.ActivityStarter
 import com.android.systemui.res.R
+import java.text.NumberFormat
+import java.util.Date
+import kotlin.math.roundToInt
 
 /**
  * The opened Now Bar item, in a window above the lock screen: the full player for music, the
@@ -127,7 +132,64 @@ class NowBarCard(
     }
 
     private fun build() {
-        if (item.type == NowBarType.MUSIC) buildPlayer() else buildDetails()
+        when (item.type) {
+            NowBarType.MUSIC -> buildPlayer()
+            NowBarType.CHARGING -> buildBattery()
+            else -> buildDetails()
+        }
+    }
+
+    private fun buildBattery() {
+        val pad = dp(24f).toInt()
+        card.setPadding(pad, dp(20f).toInt(), pad, pad)
+        val level = (item.progress * 100f).roundToInt().coerceIn(0, 100)
+        val top = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }
+        top.addView(ImageView(context).apply {
+            setImageResource(R.drawable.rr_nowbar_bolt)
+            imageTintList = ColorStateList.valueOf(Color.WHITE)
+            val inset = dp(11f).toInt()
+            setPadding(inset, inset, inset, inset)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(14f)
+                setColor(0x1AFFFFFF)
+            }
+        }, LinearLayout.LayoutParams(dp(44f).toInt(), dp(44f).toInt()))
+        val column = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        column.addView(text(NumberFormat.getPercentInstance().format(level / 100.0), 36f, bold = true))
+        column.addView(text(item.text ?: context.getString(R.string.now_bar_battery_charging),
+            14f, alpha = 0.75f))
+        top.addView(column, LinearLayout.LayoutParams(0, -2, 1f).apply {
+            marginStart = dp(12f).toInt()
+        })
+        card.addView(top)
+
+        val track = LinearLayout(context).apply {
+            background = GradientDrawable().apply {
+                cornerRadius = dp(5f)
+                setColor(0x1FFFFFFF)
+            }
+            clipToOutline = true
+            addView(View(context).apply {
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(5f)
+                    setColor(accent)
+                }
+            }, LinearLayout.LayoutParams(0, -1, level.toFloat()))
+            addView(View(context), LinearLayout.LayoutParams(0, -1, (100 - level).toFloat()))
+        }
+        card.addView(track, LinearLayout.LayoutParams(-1, dp(10f).toInt()).apply {
+            topMargin = dp(18f).toInt()
+        })
+
+        val remaining = context.getSystemService(BatteryManager::class.java)
+            ?.computeChargeTimeRemaining() ?: -1L
+        if (remaining > 0L && level < 100) {
+            val full = DateFormat.getTimeFormat(context)
+                .format(Date(System.currentTimeMillis() + remaining))
+            card.addView(text(context.getString(R.string.now_bar_full_at, full), 12f, alpha = 0.6f)
+                .apply { gravity = Gravity.END },
+                LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8f).toInt() })
+        }
     }
 
     private fun buildPlayer() {
