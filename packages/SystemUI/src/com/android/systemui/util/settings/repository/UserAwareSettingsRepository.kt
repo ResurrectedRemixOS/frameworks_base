@@ -64,7 +64,7 @@ abstract class UserAwareSettingsRepository(
             .flowOn(backgroundDispatcher)
     }
 
-    fun stringSetting(name: String, defaultValue: String?): Flow<String?> =
+    open fun stringSetting(name: String, defaultValue: String?): Flow<String?> =
         userRepository.selectedUserInfo
             .flatMapLatest { userInfo ->
                 settingObserver(name, userInfo.id) {
@@ -99,7 +99,7 @@ abstract class UserAwareSettingsRepository(
         }
     }
 
-    suspend fun setString(name: String, value: String?) {
+    open suspend fun setString(name: String, value: String?) {
         withContext(bgContext) {
             userSettings.putStringForUser(name, value, userRepository.getSelectedUserInfo().id)
         }

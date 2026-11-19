@@ -23,6 +23,7 @@ import com.android.systemui.user.data.repository.UserRepository
 import com.android.systemui.util.settings.SystemSettings
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.flow.Flow
 
 /**
  * Repository for observing values of [Settings.System] for the currently active user. That means
@@ -37,4 +38,11 @@ class UserAwareSystemSettingsRepository(
     @Background bgContext: CoroutineContext,
 ) :
     UserAwareSettingsRepository(systemSettings, userRepository, backgroundDispatcher, bgContext),
-    SystemSettingsRepository
+    SystemSettingsRepository {
+
+    override fun stringSetting(name: String, defaultValue: String?): Flow<String?> =
+        super<UserAwareSettingsRepository>.stringSetting(name, defaultValue)
+
+    override suspend fun setString(name: String, value: String?) =
+        super<UserAwareSettingsRepository>.setString(name, value)
+}
