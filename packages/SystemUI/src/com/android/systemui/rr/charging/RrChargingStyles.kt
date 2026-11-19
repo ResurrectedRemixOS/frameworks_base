@@ -81,22 +81,31 @@ object RrChargingStyles {
         if (sticky == null) return RrChargingView.SPEED_NORMAL
         val w = watts(sticky)
         val s = BatteryStatus.getChargingSpeed(context, sticky)
+        val fast = context.resources.getInteger(com.android.internal.R.integer.config_chargingFastWatts)
+        val max = context.resources.getInteger(com.android.internal.R.integer.config_chargingMaxWatts)
         return when {
-            s == BatteryStatus.CHARGING_OEM || w >= 45 -> RrChargingView.SPEED_SUPER
-            s == BatteryStatus.CHARGING_FAST || w >= 18 -> RrChargingView.SPEED_FAST
+            s == BatteryStatus.CHARGING_OEM -> RrChargingView.SPEED_SUPER
+            if (max > 0) w >= max * 0.6f else w >= 45 -> RrChargingView.SPEED_SUPER
+            s == BatteryStatus.CHARGING_FAST -> RrChargingView.SPEED_FAST
+            w >= (if (fast > 0) fast * 0.6f else 18f) -> RrChargingView.SPEED_FAST
             else -> RrChargingView.SPEED_NORMAL
         }
     }
 
     fun label(context: Context, speed: Int, watts: Int): String {
+        val brand = context.getString(com.android.internal.R.string.config_chargingMaxLabel)
         val state =
-            context.getString(
-                when (speed) {
-                    RrChargingView.SPEED_SUPER -> R.string.rr_charging_anim_super
-                    RrChargingView.SPEED_FAST -> R.string.rr_charging_anim_fast
-                    else -> R.string.rr_charging_anim_normal
-                }
-            )
+            if (speed == RrChargingView.SPEED_SUPER && brand.isNotEmpty()) {
+                brand
+            } else {
+                context.getString(
+                    when (speed) {
+                        RrChargingView.SPEED_SUPER -> R.string.rr_charging_anim_super
+                        RrChargingView.SPEED_FAST -> R.string.rr_charging_anim_fast
+                        else -> R.string.rr_charging_anim_normal
+                    }
+                )
+            }
         return if (watts > 0) context.getString(R.string.rr_charging_anim_watts, state, watts) else state
     }
 }
