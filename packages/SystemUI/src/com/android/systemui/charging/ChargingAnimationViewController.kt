@@ -26,8 +26,10 @@ import android.util.Log
 import android.widget.FrameLayout
 import com.android.settingslib.Utils
 import com.android.systemui.dagger.SysUISingleton
-import com.android.systemui.util.ScrimUtils
+import com.android.systemui.plugins.statusbar.StatusBarStateController
 import com.android.systemui.res.R
+import com.android.systemui.statusbar.StatusBarState
+import com.android.systemui.statusbar.policy.KeyguardStateController
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import javax.inject.Inject
@@ -37,7 +39,9 @@ class ChargingAnimationViewController
 @Inject
 constructor(
     private val context: Context,
-) : ScrimUtils.ScrimEventListener {
+    private val statusBarStateController: StatusBarStateController,
+    private val keyguardStateController: KeyguardStateController,
+) {
 
     private val chargingView = ChargingAnimationView(context)
     private val settingsRepo = ChargingAnimationSettingsRepository(context)
@@ -51,6 +55,7 @@ constructor(
     private var isKeyguardShowing: Boolean = false
     private var isKeyguardGoingAway: Boolean = false
     private var isDozing: Boolean = false
+    private var isPanelExpanded: Boolean = false
     private var wasCharging: Boolean = false
 
     private var shouldShowAnimation: Boolean = false
@@ -78,14 +83,44 @@ constructor(
         }
     }
 
+    private val stateListener = object : StatusBarStateController.StateListener {
+        override fun onStateChanged(newState: Int) = onBarStateChanged(newState)
+
+        override fun onDozingChanged(isDozing: Boolean) =
+            this@ChargingAnimationViewController.onDozingChanged(isDozing)
+
+        override fun onPulsingChanged(pulsing: Boolean) = setPulsing(pulsing)
+
+        override fun onExpandedChanged(isExpanded: Boolean) {
+            isPanelExpanded = isExpanded
+            updateVisibility()
+        }
+    }
+
+    private val keyguardCallback = object : KeyguardStateController.Callback {
+        override fun onKeyguardShowingChanged() =
+            this@ChargingAnimationViewController.onKeyguardShowingChanged(
+                keyguardStateController.isShowing
+            )
+
+        override fun onKeyguardFadingAwayChanged() =
+            this@ChargingAnimationViewController.onKeyguardFadingAwayChanged(
+                keyguardStateController.isKeyguardFadingAway
+            )
+
+        override fun onKeyguardGoingAwayChanged() =
+            this@ChargingAnimationViewController.onKeyguardGoingAwayChanged(
+                keyguardStateController.isKeyguardGoingAway
+            )
+    }
+
     init {
         INSTANCE = this
         
-        try {
-            ScrimUtils.get()?.addListener(this)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error adding ScrimUtils listener", e)
-        }
+        isKeyguardShowing = keyguardStateController.isShowing
+        isDozing = statusBarStateController.isDozing
+        statusBarStateController.addCallback(stateListener)
+        keyguardStateController.addCallback(keyguardCallback)
         
         observeSettings()
         registerBatteryReceiver()
@@ -211,12 +246,8 @@ constructor(
             return
         }
 
-        val isPanelCollapsed = try {
-            ScrimUtils.get()?.isPanelFullyCollapsed() ?: true
-        } catch (e: Exception) {
-            Log.e(TAG, "Error checking panel state", e)
-            true
-        }
+        val isPanelCollapsed =
+            !isPanelExpanded && statusBarStateController.state != StatusBarState.SHADE_LOCKED
 
         val shouldShow = when {
             !isPanelCollapsed -> false
@@ -237,56 +268,57 @@ constructor(
         }
     }
 
-    override fun onKeyguardShowingChanged(showing: Boolean) {
+    fun onKeyguardShowingChanged(showing: Boolean) {
         isKeyguardShowing = showing
         updateVisibility()
     }
 
-    override fun onKeyguardFadingAwayChanged(fadingAway: Boolean) {
+    fun onKeyguardFadingAwayChanged(fadingAway: Boolean) {
         isKeyguardGoingAway = fadingAway
         updateVisibility()
     }
 
-    override fun onKeyguardGoingAwayChanged(goingAway: Boolean) {
+    fun onKeyguardGoingAwayChanged(goingAway: Boolean) {
         isKeyguardGoingAway = goingAway
         updateVisibility()
     }
 
-    override fun onDozingChanged(dozing: Boolean) {
+    fun onDozingChanged(dozing: Boolean) {
         isDozing = dozing
         updateVisibility()
     }
 
-    override fun setPulsing(pulsing: Boolean) {
+    fun setPulsing(pulsing: Boolean) {
         if (pulsing && currentSettings.showOnAod && isCharging && shouldShowAnimation) {
             updateVisibility()
         }
     }
 
-    override fun onExpandedFractionChanged(expandedFraction: Float) {
+    fun onExpandedFractionChanged(expandedFraction: Float) {
         updateVisibility()
     }
 
-    override fun onQsVisibilityChanged(visible: Boolean) {
+    fun onQsVisibilityChanged(visible: Boolean) {
         updateVisibility()
     }
 
-    override fun onBarStateChanged(state: Int) {
+    fun onBarStateChanged(state: Int) {
         updateVisibility()
     }
 
-    override fun onStartedWakingUp() {
+    fun onStartedWakingUp() {
         updateVisibility()
     }
 
-    override fun onScreenTurnedOff() {
+    fun onScreenTurnedOff() {
         updateVisibility()
     }
 
     fun cleanup() {
         try {
             context.unregisterReceiver(batteryReceiver)
-            ScrimUtils.get()?.removeListener(this)
+            statusBarStateController.removeCallback(stateListener)
+            keyguardStateController.removeCallback(keyguardCallback)
         } catch (e: Exception) {
             Log.e(TAG, "Error during cleanup", e)
         }
