@@ -18,6 +18,7 @@ package com.android.systemui.shared.settings.data.repository
 
 import android.provider.Settings
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 
 /** Interface for classes that can provide access to data from [Settings.System]. */
 interface SystemSettingsRepository {
@@ -28,14 +29,20 @@ interface SystemSettingsRepository {
     /** Returns a [Flow] tracking the value of a setting as a [Boolean]. */
     fun boolSetting(name: String, defaultValue: Boolean = false): Flow<Boolean>
 
-    /** Returns a [Flow] tracking the value of a setting as a [String]. */
-    fun stringSetting(name: String, defaultValue: String? = null): Flow<String?>
+    /**
+     * Returns a [Flow] tracking the value of a setting as a [String]. Implementations outside
+     * SystemUI, like the wallpaper pickers', never ask and only read it once.
+     */
+    fun stringSetting(name: String, defaultValue: String? = null): Flow<String?> =
+        flow { emit(getString(name) ?: defaultValue) }
 
     /** Updates the value of the setting with the given name. */
     suspend fun setInt(name: String, value: Int)
 
     /** Updates the value of the setting with the given name. */
-    suspend fun setString(name: String, value: String?)
+    suspend fun setString(name: String, value: String?) {
+        throw UnsupportedOperationException("Only SystemUI writes string settings here")
+    }
 
     suspend fun getInt(name: String, defaultValue: Int = 0): Int
 
