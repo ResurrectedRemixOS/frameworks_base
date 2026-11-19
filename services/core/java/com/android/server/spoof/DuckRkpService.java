@@ -90,7 +90,9 @@ import co.nstant.in.cbor.model.UnicodeString;
  * on a fresh session, then the hardware V1 issuer. The helper sends
  * {@code 0x311e} and {@code 0x3124} through KeymasterUtils' shared buffer.
  * This rejection does not post a software CSR. The posted CSR splices the TA
- * DeviceInfo and ProtectedData bytes.
+ * DeviceInfo and ProtectedData bytes. A V2 CSR is posted without a
+ * client-side DICE check: Conscrypt has no Ed25519 KeyFactory, and Google
+ * validates the chain before it signs.
  */
 public final class DuckRkpService {
     private static final String TAG = "DuckRkp";
@@ -576,10 +578,17 @@ public final class DuckRkpService {
 
     /** Posts one AuthenticatedRequest array. The fingerprint map is appended. */
     private void acceptV2Csr(KeyPair keyPair, byte[] csrBytes, byte[] challenge) throws Exception {
-        if (csrBytes == null || csrBytes.length == 0) {
+        final byte[] csr;
+        try {
+            // Skip verifyV2: Android runtime lacks Ed25519 KeyFactory in JCA,
+            // which causes NoSuchAlgorithmException on Qualcomm DICE chains.
+            // Google RKP server cryptographically validates the DICE chain before signing.
+            csr = DuckRkpNative.csrFromV2(csrBytes);
+        } catch (IOException e) {
+            Slog.w(TAG, "V2 CSR was not an AuthenticatedRequest", e);
             throw new DuckRkpException("hal_rejected", 0);
         }
-        final DataItem decoded = decode(csrBytes);
+        final DataItem decoded = decode(csr);
         if (!(decoded instanceof Array)) {
             throw new DuckRkpException("hal_rejected", 0);
         }
@@ -682,7 +691,7 @@ public final class DuckRkpService {
                         detail);
             }
             final byte[] csr = readBlob(in);
-            if (csr.length == 0 || (csr[0] & 0xe0) != 0x80) {
+            if (csr.length == 0) {
                 throw new DuckRkpException("native_rejected", 0);
             }
             return csr;
