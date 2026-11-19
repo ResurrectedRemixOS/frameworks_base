@@ -64,6 +64,7 @@
     <string name="now_bar_charging">Charging \u00b7 <xliff:g id="level" example="74">%1$d</xliff:g>%%</string>
     <string name="now_bar_full_in">Full in <xliff:g id="duration" example="22 min">%1$s</xliff:g></string>
     <string name="now_bar_charged">Charged</string>
+    <string name="now_bar_until">Until <xliff:g id="time" example="7:00 AM">%1$s</xliff:g></string>
     <string name="now_bar_flashlight_on">Flashlight on</string>
     <string name="now_bar_buds">Earbuds</string>
     <string name="rr_charging_anim_normal">Charging</string>

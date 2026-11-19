@@ -6,10 +6,12 @@ package com.android.systemui.rr.nowbar
 
 import android.Manifest.permission.READ_GLOBAL_APP_SEARCH_DATA
 import android.app.Notification
+import android.app.PendingIntent
 import android.app.Person
 import android.app.WallpaperColors
 import android.app.appsearch.GenericDocument
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.ContentObserver
 import android.graphics.Bitmap
@@ -18,6 +20,7 @@ import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.net.Uri
 import android.os.BatteryManager
 import android.os.Handler
 import android.os.Looper
@@ -25,6 +28,8 @@ import android.os.UserHandle
 import android.provider.Settings
 import android.service.notification.NotificationListenerService.RankingMap
 import android.service.notification.StatusBarNotification
+import android.service.notification.ZenModeConfig
+import android.text.format.DateFormat
 import android.util.Log
 import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.drawable.toBitmap
@@ -47,7 +52,10 @@ import com.android.systemui.statusbar.policy.BatteryController
 import com.android.systemui.statusbar.policy.BluetoothController
 import com.android.systemui.statusbar.policy.FlashlightController
 import com.android.systemui.statusbar.policy.KeyguardStateController
+import com.android.systemui.statusbar.policy.ZenModeController
 import java.io.PrintWriter
+import java.util.Calendar
+import java.util.Date
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
@@ -67,6 +75,7 @@ constructor(
     private val batteryController: BatteryController,
     private val flashlightController: FlashlightController,
     private val bluetoothController: BluetoothController,
+    private val zenModeController: ZenModeController,
     private val keyguardStateController: KeyguardStateController,
     private val wakefulnessLifecycle: WakefulnessLifecycle,
     @Background private val bgExecutor: Executor,
@@ -100,6 +109,7 @@ constructor(
     private var chargingItem: NowBarItem? = null
     private var budsItems: List<NowBarItem> = emptyList()
     private var flashlightItem: NowBarItem? = null
+    private var modeItem: NowBarItem? = null
     private lateinit var sessionManager: MediaSessionManager
     private val scores = NowBarScores(context, handler, bgExecutor) { publish() }
 
@@ -163,6 +173,11 @@ constructor(
         override fun onFlashlightAvailabilityChanged(available: Boolean) {}
     }
 
+    private val zenCallback = object : ZenModeController.Callback {
+        override fun onZenChanged(zen: Int) = updateMode()
+        override fun onConfigChanged(config: ZenModeConfig) = updateMode()
+    }
+
     override fun start() {
         instance = this
         commandRegistry.registerCommand("now-bar-goal") { GoalCommand() }
@@ -189,6 +204,8 @@ constructor(
         flashlightController.addCallback(flashlightListener)
         bluetoothController.addCallback(bluetoothCallback)
         updateBuds()
+        zenModeController.addCallback(zenCallback)
+        updateMode()
         keyguardStateController.addCallback(object : KeyguardStateController.Callback {
             override fun onKeyguardShowingChanged() = updateScoresShown()
         })
@@ -304,6 +321,7 @@ constructor(
         mediaItem?.let(all::add)
         chargingItem?.let(all::add)
         flashlightItem?.let(all::add)
+        modeItem?.let(all::add)
         all += budsItems
         all += scores.items
         hidden.retainAll(all.map { it.key }.toSet())
@@ -637,6 +655,67 @@ constructor(
         ),
     )
 
+    // Do Not Disturb and modes
+
+    private fun updateMode() {
+        handler.post {
+            modeItem = modeItem()
+            publish()
+        }
+    }
+
+    private fun modeItem(): NowBarItem? {
+        if (zenModeController.zen == Settings.Global.ZEN_MODE_OFF) return null
+        val config = zenModeController.config
+        val manual = config?.manualRule?.takeIf { config.isManualActive }
+        val rule = manual ?: config?.automaticRules?.values?.firstOrNull { it.isActive }
+        val dnd = context.getString(R.string.quick_settings_dnd_label)
+        val end = rule?.conditionId?.let(::modeEnd) ?: 0L
+        return NowBarItem(
+            key = KEY_MODE,
+            type = NowBarType.MODE,
+            packageName = null,
+            icon = context.getDrawable(R.drawable.rr_nowbar_mode),
+            art = null,
+            title = if (rule == null || rule === manual) dnd else rule.name ?: dnd,
+            text = if (end > System.currentTimeMillis()) {
+                context.getString(R.string.now_bar_until,
+                    DateFormat.getTimeFormat(context).format(Date(end)))
+            } else {
+                null
+            },
+            actions = listOf(
+                NowBarAction(context.getString(R.string.now_bar_turn_off),
+                    iconRes = R.drawable.rr_nowbar_close,
+                    run = { zenModeController.setZen(Settings.Global.ZEN_MODE_OFF, null, TAG) })
+            ),
+            contentIntent = modesIntent,
+        )
+    }
+
+    private fun modeEnd(conditionId: Uri): Long {
+        val countdown = ZenModeConfig.tryParseCountdownConditionId(conditionId)
+        if (countdown > 0L) return countdown
+        val schedule = ZenModeConfig.tryParseScheduleConditionId(conditionId) ?: return 0L
+        val now = System.currentTimeMillis()
+        val end = Calendar.getInstance().apply {
+            timeInMillis = now
+            set(Calendar.HOUR_OF_DAY, schedule.endHour)
+            set(Calendar.MINUTE, schedule.endMinute)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+            if (timeInMillis <= now) add(Calendar.DATE, 1)
+        }.timeInMillis
+        val alarm = schedule.nextAlarm
+        return if (schedule.exitAtAlarm && alarm > now && alarm < end) alarm else end
+    }
+
+    private val modesIntent by lazy {
+        PendingIntent.getActivity(context, 0,
+            Intent(Settings.ACTION_ZEN_MODE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_IMMUTABLE)
+    }
+
     private fun appLabel(pkg: String?): CharSequence? =
         pkg?.let {
             try {
@@ -733,6 +812,7 @@ constructor(
         private const val TAG = "NowBar"
         private const val KEY_CHARGING = "charging"
         private const val KEY_FLASHLIGHT = "flashlight"
+        private const val KEY_MODE = "mode"
         private const val SCREEN_RECORD_CHANNEL = "screen_record"
         private val CLOCK_PACKAGES = setOf("com.google.android.deskclock", "com.android.deskclock")
         private val RECORDER_PACKAGES = setOf("org.lineageos.recorder")
