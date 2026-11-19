@@ -450,7 +450,7 @@ constructor(
 
     override fun onNotificationRankingUpdate(rankingMap: RankingMap) {}
 
-    private fun classify(sbn: StatusBarNotification): NowBarType? {
+    private fun classify(sbn: StatusBarNotification, oneUi: NowBarOneUi?): NowBarType? {
         val n = sbn.notification
         val ongoing =
             n.flags and (Notification.FLAG_ONGOING_EVENT or Notification.FLAG_FOREGROUND_SERVICE) != 0
@@ -469,27 +469,30 @@ constructor(
             (n.flags and Notification.FLAG_PROMOTED_ONGOING != 0 ||
                 n.isStyle(Notification.ProgressStyle::class.java)) &&
                 settings.showsLiveFrom(sbn.packageName) -> NowBarType.LIVE
+            oneUi != null && settings.showsLiveFrom(sbn.packageName) -> NowBarType.LIVE
             else -> null
         }
     }
 
     private fun notificationItem(sbn: StatusBarNotification): NowBarItem? {
-        val type = classify(sbn) ?: return null
         val n = sbn.notification
         val extras = n.extras
+        val oneUi = NowBarOneUi.of(extras)
+        val type = classify(sbn, oneUi) ?: return null
         val packageContext = try {
             sbn.getPackageContext(context)
         } catch (e: RuntimeException) {
             context
         }
-        var title = extras.getCharSequence(Notification.EXTRA_TITLE)
+        var title = oneUi?.title
+            ?: extras.getCharSequence(Notification.EXTRA_TITLE)
             ?: extras.getCharSequence(Notification.EXTRA_TITLE_BIG)
         if (type == NowBarType.CALL) {
             extras.getParcelable(Notification.EXTRA_CALL_PERSON, Person::class.java)?.name
                 ?.let { title = it }
         }
         val label = title ?: appLabel(sbn.packageName) ?: return null
-        val live = if (type == NowBarType.LIVE) liveOf(n, packageContext) else null
+        val live = oneUi?.live ?: if (type == NowBarType.LIVE) liveOf(n, packageContext) else null
         val max = extras.getInt(Notification.EXTRA_PROGRESS_MAX)
         val progress = when {
             live != null -> live.progress
@@ -505,12 +508,13 @@ constructor(
             key = sbn.key,
             type = type,
             packageName = sbn.packageName,
-            icon = n.smallIcon?.loadDrawable(packageContext),
+            icon = oneUi?.icon?.loadDrawable(packageContext)
+                ?: n.smallIcon?.loadDrawable(packageContext),
             art = n.getLargeIcon()?.loadDrawable(packageContext)?.let {
                 it.toBitmap(LARGE_ICON_SIZE, LARGE_ICON_SIZE)
             },
             title = label,
-            text = extras.getCharSequence(Notification.EXTRA_TEXT),
+            text = oneUi?.text ?: extras.getCharSequence(Notification.EXTRA_TEXT),
             chronometerBase =
                 if (extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER)) n.`when` else 0L,
             countDown = extras.getBoolean(Notification.EXTRA_CHRONOMETER_COUNT_DOWN),
@@ -519,6 +523,7 @@ constructor(
             actions = actions,
             contentIntent = n.contentIntent,
             live = live,
+            automation = oneUi?.automation == true,
         )
     }
 

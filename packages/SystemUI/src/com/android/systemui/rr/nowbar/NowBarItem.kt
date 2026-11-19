@@ -102,4 +102,5 @@ class NowBarItem(
     val controller: MediaController? = null,
     val score: NowBarScore? = null,
     val live: NowBarLive? = null,
+    val automation: Boolean = false,
 )
