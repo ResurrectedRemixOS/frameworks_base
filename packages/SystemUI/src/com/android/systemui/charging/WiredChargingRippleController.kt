@@ -340,8 +340,18 @@ constructor(
         val sticky = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val level = sticky?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
         view.level = if (level in 0..100) level else batteryLevel
-        view.speed = RrChargingStyles.speed(context, sticky)
-        view.label = RrChargingStyles.label(context, view.speed, RrChargingStyles.watts(sticky))
+        describe(view, sticky)
+        val updates =
+            object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) {
+                    if (drawnView === view) describe(view, intent)
+                }
+            }
+        context.registerReceiver(
+            updates,
+            IntentFilter(Intent.ACTION_BATTERY_CHANGED),
+            Context.RECEIVER_NOT_EXPORTED,
+        )
         val port = portPosition()
         view.portX = port.x
         view.portY = port.y
@@ -355,6 +365,9 @@ constructor(
                     view.removeOnAttachStateChangeListener(this)
                     view.play {
                         if (drawnView === view) drawnView = null
+                        try {
+                            context.unregisterReceiver(updates)
+                        } catch (_: IllegalArgumentException) {}
                         safeRemoveWindowOverlay(view)
                     }
                 }
@@ -362,6 +375,11 @@ constructor(
         )
         windowManager.addView(view, windowLayoutParams)
         uiEventLogger.log(WiredChargingRippleEvent.CHARGING_RIPPLE_PLAYED)
+    }
+
+    private fun describe(view: RrChargingView, battery: Intent?) {
+        view.speed = RrChargingStyles.speed(context, battery)
+        view.label = RrChargingStyles.label(context, view.speed, RrChargingStyles.watts(battery))
     }
 
     private fun startBlissAnimation(style: Int) {

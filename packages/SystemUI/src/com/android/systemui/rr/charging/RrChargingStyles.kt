@@ -12,9 +12,11 @@ import android.provider.Settings
 import com.android.settingslib.fuelgauge.BatteryStatus
 import com.android.systemui.bliss.charging.BlissChargingAnimationView
 import com.android.systemui.res.R
+import kotlin.math.roundToInt
 
 object RrChargingStyles {
     const val SETTING = "rr_charging_animation"
+    private const val MIN_WATTS = 5
     const val PREVIEW = "rr_charging_animation_preview"
     private const val LEGACY_RING = "rr_charging_ring"
 
@@ -74,20 +76,18 @@ object RrChargingStyles {
     fun watts(sticky: Intent?): Int {
         if (sticky == null) return 0
         val oem = sticky.getIntExtra(BatteryManager.EXTRA_OEM_CHARGER_WATTS, 0)
-        return if (oem > 0) oem else BatteryStatus(sticky).maxChargingWattage / 1_000_000
+        return if (oem > 0) oem else (BatteryStatus(sticky).maxChargingWattage / 1_000_000f).roundToInt()
     }
 
     fun speed(context: Context, sticky: Intent?): Int {
         if (sticky == null) return RrChargingView.SPEED_NORMAL
         val w = watts(sticky)
-        val s = BatteryStatus.getChargingSpeed(context, sticky)
         val fast = context.resources.getInteger(com.android.internal.R.integer.config_chargingFastWatts)
         val max = context.resources.getInteger(com.android.internal.R.integer.config_chargingMaxWatts)
         return when {
-            s == BatteryStatus.CHARGING_OEM -> RrChargingView.SPEED_SUPER
+            sticky.getBooleanExtra(BatteryManager.EXTRA_OEM_CHARGER, false) -> RrChargingView.SPEED_SUPER
             if (max > 0) w >= max * 0.6f else w >= 45 -> RrChargingView.SPEED_SUPER
-            s == BatteryStatus.CHARGING_FAST -> RrChargingView.SPEED_FAST
-            w >= (if (fast > 0) fast * 0.6f else 18f) -> RrChargingView.SPEED_FAST
+            w >= (if (fast > 0) fast * 0.6f else 15f) -> RrChargingView.SPEED_FAST
             else -> RrChargingView.SPEED_NORMAL
         }
     }
@@ -106,6 +106,6 @@ object RrChargingStyles {
                     }
                 )
             }
-        return if (watts > 0) context.getString(R.string.rr_charging_anim_watts, state, watts) else state
+        return if (watts >= MIN_WATTS) context.getString(R.string.rr_charging_anim_watts, state, watts) else state
     }
 }
