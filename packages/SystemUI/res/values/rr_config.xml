@@ -29,4 +29,6 @@
     <!-- Optional overlays for the SuperVOOC ring: the wordmark and the slanted wattage pill. -->
     <array name="config_chargingAnimLogo"/>
     <array name="config_chargingAnimWattageBg"/>
+
+    <bool name="config_rrSeparateSimIcons">false</bool>
 </resources>
