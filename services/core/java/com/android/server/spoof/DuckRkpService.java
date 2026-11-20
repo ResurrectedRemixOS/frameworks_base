@@ -70,12 +70,9 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 import co.nstant.in.cbor.CborDecoder;
-import co.nstant.in.cbor.CborEncoder;
 import co.nstant.in.cbor.model.Array;
 import co.nstant.in.cbor.model.ByteString;
 import co.nstant.in.cbor.model.DataItem;
-import co.nstant.in.cbor.model.Map;
-import co.nstant.in.cbor.model.UnicodeString;
 
 /**
  * In-ROM Duck device RKP. Generates a software P-256 key and MACs it with the
@@ -576,30 +573,75 @@ public final class DuckRkpService {
         acceptV2Csr(keyPair, csrBytes, challenge);
     }
 
-    /** Posts one AuthenticatedRequest array. The fingerprint map is appended. */
+    /**
+     * Posts one AuthenticatedRequest. The fingerprint map is appended in the
+     * clear, and the four signed items keep the bytes KeyMint returned.
+     */
     private void acceptV2Csr(KeyPair keyPair, byte[] csrBytes, byte[] challenge) throws Exception {
         final byte[] csr;
         try {
-            // Skip verifyV2: Android runtime lacks Ed25519 KeyFactory in JCA,
-            // which causes NoSuchAlgorithmException on Qualcomm DICE chains.
-            // Google RKP server cryptographically validates the DICE chain before signing.
-            csr = DuckRkpNative.csrFromV2(csrBytes);
+            csr = withFingerprint(DuckRkpNative.csrFromV2(csrBytes),
+                    android.os.Build.FINGERPRINT);
         } catch (IOException e) {
             Slog.w(TAG, "V2 CSR was not an AuthenticatedRequest", e);
             throw new DuckRkpException("hal_rejected", 0);
         }
-        final DataItem decoded = decode(csr);
-        if (!(decoded instanceof Array)) {
-            throw new DuckRkpException("hal_rejected", 0);
-        }
-        final Map deviceInfo = new Map();
-        deviceInfo.put(new UnicodeString("fingerprint"),
-                new UnicodeString(android.os.Build.FINGERPRINT));
-        ((Array) decoded).add(deviceInfo);
-
         throwIfCanceled();
         setStage("signing");
-        acceptChain(keyPair, submitCsr(encode(decoded), challenge));
+        acceptChain(keyPair, submitCsr(csr, challenge));
+    }
+
+    /**
+     * Attaches the build fingerprint as the fifth AuthenticatedRequest field.
+     * A request that already has that field is left unchanged. Decoding and
+     * re-encoding the array would change the bytes the device signed.
+     */
+    private static byte[] withFingerprint(byte[] csr, String fingerprint) throws DuckRkpException {
+        if (fingerprint == null || fingerprint.trim().isEmpty()) {
+            throw new DuckRkpException("device_info", 0);
+        }
+        try {
+            final CborReader reader = new CborReader(csr);
+            final long count = reader.beginArray();
+            if (count != 4 && count != 5) {
+                throw new DuckRkpException("invalid_hal_response", 0);
+            }
+            final byte[] version = reader.sliceItem();
+            if (version.length != 1 || version[0] != 0x01) {
+                throw new DuckRkpException("invalid_hal_response", 0);
+            }
+            if (count == 5) {
+                for (int i = 1; i < 5; i++) {
+                    reader.skip();
+                }
+                if (reader.position() != csr.length) {
+                    throw new DuckRkpException("invalid_hal_response", 0);
+                }
+                return csr;
+            }
+            final ByteArrayOutputStream out = new ByteArrayOutputStream();
+            out.write(0x85);
+            out.write(version, 0, version.length);
+            for (int i = 1; i < 4; i++) {
+                final byte[] item = reader.sliceItem();
+                out.write(item, 0, item.length);
+            }
+            if (reader.position() != csr.length) {
+                throw new DuckRkpException("invalid_hal_response", 0);
+            }
+            final ByteArrayOutputStream metadata = new ByteArrayOutputStream();
+            metadata.write(0xa1);
+            writeTstr(metadata, "fingerprint");
+            writeTstr(metadata, fingerprint);
+            final byte[] map = metadata.toByteArray();
+            out.write(map, 0, map.length);
+            return out.toByteArray();
+        } catch (DuckRkpException e) {
+            if ("device_info".equals(e.code) || "invalid_hal_response".equals(e.code)) {
+                throw e;
+            }
+            throw new DuckRkpException("invalid_hal_response", 0);
+        }
     }
 
     /**
@@ -1292,12 +1334,6 @@ public final class DuckRkpService {
 
     private static DataItem decode(byte[] data) throws Exception {
         return new CborDecoder(new ByteArrayInputStream(data)).decodeNext();
-    }
-
-    private static byte[] encode(DataItem item) throws Exception {
-        final ByteArrayOutputStream out = new ByteArrayOutputStream();
-        new CborEncoder(out).encode(item);
-        return out.toByteArray();
     }
 
     private static final class EekMaterial {
